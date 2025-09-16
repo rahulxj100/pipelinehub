@@ -1,5 +1,4 @@
-# pipelinehub
-# Flexible DataPipeline
+# PipelineHub
 
 A flexible Python library for creating custom data processing workflows with ease.
 
