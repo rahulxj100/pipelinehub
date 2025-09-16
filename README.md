@@ -57,7 +57,7 @@ print(result)
 
 ### Data Cleaning Pipeline
 ```python 
-from datapipeline import DataPipeline, outlier_removal, normalize_data, calculate_stats
+from pipelinehub import DataPipeline, outlier_removal, normalize_data, calculate_stats
 
 # Create a data cleaning pipeline
 cleaning_pipeline = (DataPipeline()
@@ -74,7 +74,7 @@ print(stats)
 ### Text Processing Pipeline
 ```python
 import re
-from datapipeline import DataPipeline
+from pipelinehub import DataPipeline
 
 def clean_text(text):
     """Remove special characters and extra whitespace."""
@@ -98,5 +98,50 @@ text = "Hello World! This is a Sample Text for Processing... With special chars!
 keywords = text_pipeline.execute(text, verbose=True)
 print(keywords)
 ```
+
+## Pipeline Management
+```python
+pipeline = DataPipeline()
+pipeline.add_step(lambda x: [i*2 for i in x], "double")
+pipeline.add_step(lambda x: [i+1 for i in x], "add_one")
+
+# Inspect pipeline
+print(len(pipeline))  # 2
+print(pipeline.get_steps())  # ['double', 'add_one']
+print(pipeline)  # DataPipeline(2 steps: double, add_one)
+
+# Remove steps
+pipeline.remove_step(0)  # Remove first step
+print(pipeline.get_steps())  # ['add_one']
+
+# Clear all steps
+pipeline.clear_steps()
+print(len(pipeline))  # 0
+```
+## 🚀 Performance Tips
+
+- Use built-in functions when possible - they're optimized
+- Avoid creating large intermediate data structures
+- Consider using generators for large datasets:
+```python
+def generator_step(data):
+    """Use generator for memory efficiency."""
+    for item in data:
+        if item > 0:
+            yield item * 2
+
+pipeline = DataPipeline().add_step(lambda x: list(generator_step(x)), "process")
+```
+
+## 🤝 Contributing
+Contributions are welcome! Here's how to get started:
+
+- Fork the repository
+- Create a feature branch: git checkout -b feature/amazing-feature
+- Make your changes and add tests
+- Run tests: pytest tests/
+- Commit your changes: git commit -m 'Add amazing feature'
+- Push to branch: git push origin feature/amazing-feature
+- Open a Pull Request
 
 
