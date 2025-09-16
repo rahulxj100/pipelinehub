@@ -6,7 +6,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 setup(
     name="flexible-datapipeline",
     use_scm_version=False,
-    version="1.0.0",
+    version="0.1.0",
     author="Rahul Paul",
     author_email="paul.rahulxj100@gmail.com",
     description="A flexible data pipeline library for custom data processing workflows",
