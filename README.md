@@ -144,4 +144,16 @@ Contributions are welcome! Here's how to get started:
 - Push to branch: git push origin feature/amazing-feature
 - Open a Pull Request
 
+## 📄 License
+This project is licensed under the MIT License - see the LICENSE file for details.
+## 🙋‍♂️ Support
+
+Discussions: GitHub Discussions
+
+## 🎉 Acknowledgments
+
+Inspired by functional programming and Unix pipes philosophy
+Built with ❤️ for the Python community
+Thanks to all contributors and users!
+
 
