@@ -152,8 +152,8 @@ Discussions: GitHub Discussions
 
 ## 🎉 Acknowledgments
 
-Inspired by functional programming and Unix pipes philosophy
-Built with ❤️ for the Python community
-Thanks to all contributors and users!
+- Inspired by functional programming and Unix pipes philosophy
+- Built with ❤️ for the Python community
+- Thanks to all contributors and users!
 
 
