@@ -23,7 +23,7 @@ pip install pipelinehub
 
 ## 📖 Quick Start
 ```python
-from datapipeline import DataPipeline, normalize_data, square_numbers
+from pipelinehub import DataPipeline, normalize_data, square_numbers
 
 # Create a pipeline with multiple steps
 pipeline = DataPipeline()
@@ -35,27 +35,13 @@ pipeline.add_step(normalize_data, "normalize")
 data = [-2, -1, 0, 1, 2, 3, 4, 5]
 result = pipeline.execute(data, verbose=True)
 
-# Output with verbose mode:
-# Starting pipeline with 3 steps
-# Initial data: list with 8 elements
-# 
-# Step 1: filter_positive
-#   Output: list with 5 elements
-# 
-# Step 2: square
-#   Output: list with 5 elements
-# 
-# Step 3: normalize
-#   Output: list with 5 elements
-
 print(result)
-# [0.0, 0.07142857142857142, 0.2857142857142857, 0.6428571428571429, 1.0]
 ```
 ## 🔗 Method Chaining
 Create pipelines fluently with method chaining:
 
 ```python
-from datapipeline import DataPipeline, add_constant
+from pipelinehub import DataPipeline, add_constant
 
 # Chain operations together
 result = (DataPipeline()
@@ -64,5 +50,53 @@ result = (DataPipeline()
           .add_step(lambda x: sorted(x, reverse=True), "sort_desc")
           .execute([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]))
 
-print(result)  # [20, 18, 16, 14, 12]
+print(result) 
 ```
+
+## 📚 Comprehensive Examples
+
+### Data Cleaning Pipeline
+```python 
+from datapipeline import DataPipeline, outlier_removal, normalize_data, calculate_stats
+
+# Create a data cleaning pipeline
+cleaning_pipeline = (DataPipeline()
+    .add_step(lambda x: [float(i) for i in x if i is not None], "convert_and_filter")
+    .add_step(lambda x: outlier_removal(x, threshold=2.5), "remove_outliers") 
+    .add_step(normalize_data, "normalize")
+    .add_step(calculate_stats, "final_stats"))
+
+# Process messy data
+messy_data = [1, 2, 3, None, 100, 4, 5, 6, 7, 8, 9]
+stats = cleaning_pipeline.execute(messy_data, verbose=True)
+print(stats)
+```
+### Text Processing Pipeline
+```python
+import re
+from datapipeline import DataPipeline
+
+def clean_text(text):
+    """Remove special characters and extra whitespace."""
+    text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
+    return ' '.join(text.split())
+
+def extract_keywords(words, min_length=4):
+    """Extract words longer than min_length."""
+    return [word for word in words if len(word) >= min_length]
+
+# Build text processing pipeline
+text_pipeline = (DataPipeline()
+    .add_step(str.lower, "lowercase")
+    .add_step(clean_text, "clean")
+    .add_step(str.split, "tokenize") 
+    .add_step(lambda words: extract_keywords(words, min_length=4), "extract_keywords")
+    .add_step(lambda words: sorted(set(words)), "unique_and_sort"))
+
+# Process text
+text = "Hello World! This is a Sample Text for Processing... With special chars!!!"
+keywords = text_pipeline.execute(text, verbose=True)
+print(keywords)
+```
+
+
