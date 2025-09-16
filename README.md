@@ -19,9 +19,10 @@ A flexible Python library for creating custom data processing workflows with eas
 ## Installation
 ```bash
 pip install pipelinehub
+```
 
-📖 Quick Start
-
+## 📖 Quick Start
+```python
 from datapipeline import DataPipeline, normalize_data, square_numbers
 
 # Create a pipeline with multiple steps
@@ -49,3 +50,19 @@ result = pipeline.execute(data, verbose=True)
 
 print(result)
 # [0.0, 0.07142857142857142, 0.2857142857142857, 0.6428571428571429, 1.0]
+```
+## 🔗 Method Chaining
+Create pipelines fluently with method chaining:
+
+```python
+from datapipeline import DataPipeline, add_constant
+
+# Chain operations together
+result = (DataPipeline()
+          .add_step(lambda x: [i for i in x if i % 2 == 0], "filter_even")
+          .add_step(add_constant(10), "add_10")  
+          .add_step(lambda x: sorted(x, reverse=True), "sort_desc")
+          .execute([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]))
+
+print(result)  # [20, 18, 16, 14, 12]
+```
