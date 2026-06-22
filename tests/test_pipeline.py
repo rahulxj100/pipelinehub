@@ -11,7 +11,8 @@ class TestDataPipeline:
         
     def test_init_with_data(self):
         data = [1, 2, 3]
-        pipeline = DataPipeline(data)
+        pipeline = DataPipeline()
+        pipeline.set_data(data)
         assert pipeline.data == data
         
     def test_add_step(self):
