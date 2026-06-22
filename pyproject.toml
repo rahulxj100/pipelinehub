@@ -39,7 +39,7 @@ dev = ["pytest>=6.0", "black", "flake8", "mypy"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["datapipeline*"]
+include = ["pipelinehub*"]
 
 [tool.black]
 line-length = 88
@@ -50,3 +50,14 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+
+[tool.bumpversion]
+current_version = "0.1.0"
+commit = true
+tag = true
+message = "chore: bump version to {new_version} [skip ci]"
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = 'version = "{current_version}"'
+replace = 'version = "{new_version}"'
