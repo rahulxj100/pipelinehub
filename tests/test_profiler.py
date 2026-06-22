@@ -56,6 +56,8 @@ class TestProfileSequence:
         assert result["numeric_stats"]["min"] == 1
         assert result["numeric_stats"]["max"] == 5
         assert result["sample_head"] == [1, 2, 3, 4, 5]
+        assert "std" in result["numeric_stats"]
+        assert result["numeric_stats"]["std"] >= 0
 
     def test_string_list(self):
         p = DataProfiler()
@@ -85,6 +87,11 @@ class TestProfileSequence:
         p = DataProfiler()
         result = p._profile_sequence((10, 20, 30))
         assert result["length"] == 3
+
+    def test_sample_tail_short_sequence(self):
+        p = DataProfiler()
+        result = p._profile_sequence([1, 2, 3])
+        assert result["sample_tail"] == [1, 2, 3]
 
 
 class TestProfileDict:

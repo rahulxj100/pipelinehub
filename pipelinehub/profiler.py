@@ -130,7 +130,7 @@ class DataProfiler:
             pl.Int8, pl.Int16, pl.Int32, pl.Int64,
             pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64,
         )
-        numeric_cols = [c for c in columns if isinstance(df[c].dtype, numeric_types)]
+        numeric_cols = [c for c in columns if df[c].dtype in numeric_types]
         numeric_stats: Dict[str, Any] = {}
         for col in numeric_cols:
             s = sample[col].drop_nulls()
@@ -186,12 +186,15 @@ class DataProfiler:
             element_type = first_type if all(type(x).__name__ == first_type for x in data) else "mixed"
 
         sample_head = list(data[:5])
-        sample_tail = list(data[-5:]) if length > 5 else []
+        sample_tail = list(data[-5:])
 
         numeric_stats: Optional[Dict[str, Any]] = None
         if length > 0 and all(isinstance(x, (int, float)) for x in data):
+            mean = sum(data) / length
+            variance = sum((x - mean) ** 2 for x in data) / length
             numeric_stats = {
-                "mean": sum(data) / length,
+                "mean": mean,
+                "std": variance ** 0.5,
                 "min": min(data),
                 "max": max(data),
             }
