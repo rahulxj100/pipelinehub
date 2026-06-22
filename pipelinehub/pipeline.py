@@ -117,9 +117,8 @@ class DataPipeline:
 
     def _execute_with_snapshots(self, current_data: Any, verbose: bool) -> Any:
         """Snapshot engine execution path."""
-        run_id = self._store.start_run(self.name, len(self.steps))
-
         last_run = self._store.get_last_run(self.name)
+        run_id = self._store.start_run(self.name, len(self.steps))
         last_steps_by_name: Dict[str, Any] = {}
         if last_run:
             for s in last_run.get("steps", []):
@@ -139,6 +138,7 @@ class DataPipeline:
             except Exception as e:
                 self._store.save_failure(run_id, step_name, i, snap_before, e)
                 self._store.finish_run(run_id, "failed", datetime.datetime.utcnow().isoformat())
+                self._store.prune_old_runs()
                 raise PipelineStepError(step_name, i, snap_before, e)
 
             duration = time.time() - step_start
@@ -182,12 +182,15 @@ class DataPipeline:
             prev_profile = prev_snap_after.get("profile", {})
 
             if dtype == "dataframe":
-                rows_now = profile_after.get("rows", 0)
-                rows_prev = prev_profile.get("rows") or 1
-                if rows_prev > 0 and rows_now < rows_prev * 0.5:
-                    anomalies.append(
-                        f'⚠  Row count dropped {rows_prev}→{rows_now} in step "{step_name}" (>50%)'
-                    )
+                rows_prev = prev_profile.get("rows", 0)
+                if rows_prev == 0:
+                    pass  # can't compute percentage drop from 0-row step
+                else:
+                    rows_now = profile_after.get("rows", 0)
+                    if rows_now < rows_prev * 0.5:
+                        anomalies.append(
+                            f'⚠  Row count dropped {rows_prev}→{rows_now} in step "{step_name}" (>50%)'
+                        )
 
                 nulls_now = profile_after.get("null_counts", {})
                 nulls_prev = prev_profile.get("null_counts", {})
@@ -213,12 +216,13 @@ class DataPipeline:
                     anomalies.append(f'⚠  Column "{col}" dropped in step "{step_name}"')
 
             elif dtype == "sequence":
-                len_now = profile_after.get("length", 0)
-                len_prev = prev_profile.get("length") or 1
-                if len_prev > 0 and len_now < len_prev * 0.5:
-                    anomalies.append(
-                        f'⚠  Sequence length dropped {len_prev}→{len_now} in step "{step_name}" (>50%)'
-                    )
+                len_prev = prev_profile.get("length", 0)
+                if len_prev > 0:
+                    len_now = profile_after.get("length", 0)
+                    if len_now < len_prev * 0.5:
+                        anomalies.append(
+                            f'⚠  Sequence length dropped {len_prev}→{len_now} in step "{step_name}" (>50%)'
+                        )
 
         if last_run_step is not None and dtype == "dataframe":
             last_profile = (last_run_step.get("snapshot_after") or {}).get("profile", {})
@@ -236,6 +240,15 @@ class DataPipeline:
                         anomalies.append(
                             f'⚠  {col} mean shifted {shift * 100:.1f}% vs last run in step "{step_name}"'
                         )
+
+        if last_run_step is not None and dtype == "sequence":
+            last_profile = (last_run_step.get("snapshot_after") or {}).get("profile", {})
+            len_now = profile_after.get("length", 0)
+            len_last = last_profile.get("length", 0)
+            if len_last > 0 and len_now < len_last * 0.5:
+                anomalies.append(
+                    f'⚠  Sequence length dropped {len_last}→{len_now} vs last run in step "{step_name}" (>50%)'
+                )
 
         return anomalies
 
@@ -306,7 +319,7 @@ class DataPipeline:
         Compare two runs. If no run_ids given, compare last two runs.
         Prints a human-readable diff and returns the raw diff dict.
         """
-        if run_id_a is None or run_id_b is None:
+        if run_id_a is None and run_id_b is None:
             runs = self._store.list_runs(pipeline_name=self.name, limit=2)
             if len(runs) < 2:
                 print("Not enough runs to compare (need at least 2)")
@@ -357,7 +370,7 @@ class DataPipeline:
             raise ValueError(f"Step '{step_name}' not found in pipeline. Available: {self.step_names}")
         start_idx = self.step_names.index(step_name)
         current_data = data
-        for step, sname in zip(self.steps[start_idx:], self.step_names[start_idx:]):
+        for step in self.steps[start_idx:]:
             current_data = step(current_data)
         return current_data
 

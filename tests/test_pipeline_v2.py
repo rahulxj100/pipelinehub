@@ -164,6 +164,18 @@ class TestCompareRuns:
         diff = p.compare_runs()
         assert diff == {}
 
+    def test_compare_runs_with_one_explicit_id_ignored(self, tmp_path):
+        """Providing only run_id_a should not silently discard it."""
+        p = DataPipeline(name="test", db_path=str(tmp_path / "runs.db"))
+        p.add_step(double, "double")
+        p.execute([1, 2, 3], debug=True)
+        p.execute([1, 2, 3], debug=True)
+        runs = p.list_runs()
+        # Providing both explicit IDs should use them (not auto-fetch)
+        diff = p.compare_runs(runs[1]["run_id"], runs[0]["run_id"])
+        assert "steps" in diff
+        assert diff != {}
+
 
 class TestAnomalyDetection:
 
