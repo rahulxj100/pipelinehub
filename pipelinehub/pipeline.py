@@ -142,8 +142,9 @@ class DataPipeline:
             try:
                 result = step(current_data)
             except Exception as e:
-                self._store.save_failure(run_id, step_name, i, snap_before, e)
-                self._store.finish_run(run_id, "failed", datetime.datetime.utcnow().isoformat())
+                with suppress(Exception):
+                    self._store.save_failure(run_id, step_name, i, snap_before, e)
+                    self._store.finish_run(run_id, "failed", datetime.datetime.utcnow().isoformat())
                 with suppress(Exception):
                     self._store.prune_old_runs()
                 raise PipelineStepError(step_name, i, snap_before, e)
@@ -330,8 +331,7 @@ class DataPipeline:
         Prints a human-readable diff and returns the raw diff dict.
         """
         if run_id_a is None and run_id_b is None:
-            runs = [r for r in self._store.list_runs(pipeline_name=self.name, limit=10)
-                    if r["status"] == "success"][:2]
+            runs = self._store.list_runs(pipeline_name=self.name, limit=2, status="success")
             if len(runs) < 2:
                 print("Not enough runs to compare (need at least 2)")
                 return {}
@@ -342,6 +342,9 @@ class DataPipeline:
             return {}
 
         diff = self._store.compare_runs(run_id_a, run_id_b)
+        if "error" in diff:
+            print(f"Cannot compare runs: {diff['error']}")
+            return diff
         self._print_diff(diff, run_id_a, run_id_b)
         return diff
 

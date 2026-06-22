@@ -269,24 +269,27 @@ class RunStore:
                 conn.execute("DELETE FROM failures WHERE run_id = ?", (rid,))
             conn.execute("DELETE FROM runs WHERE started_at < ?", (cutoff,))
 
-    def list_runs(self, pipeline_name: Optional[str] = None, limit: int = 10) -> List[Dict[str, Any]]:
+    def list_runs(self, pipeline_name: Optional[str] = None, limit: int = 10, status: Optional[str] = None) -> List[Dict[str, Any]]:
         """List recent runs with metadata (no step snapshots)."""
         with self._get_conn() as conn:
             orig = conn.row_factory
             conn.row_factory = sqlite3.Row
             try:
+                conditions = []
+                params = []
                 if pipeline_name:
-                    rows = conn.execute(
-                        "SELECT run_id, pipeline_name, started_at, finished_at, status, total_steps "
-                        "FROM runs WHERE pipeline_name = ? ORDER BY started_at DESC LIMIT ?",
-                        (pipeline_name, limit),
-                    ).fetchall()
-                else:
-                    rows = conn.execute(
-                        "SELECT run_id, pipeline_name, started_at, finished_at, status, total_steps "
-                        "FROM runs ORDER BY started_at DESC LIMIT ?",
-                        (limit,),
-                    ).fetchall()
+                    conditions.append("pipeline_name = ?")
+                    params.append(pipeline_name)
+                if status:
+                    conditions.append("status = ?")
+                    params.append(status)
+                where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+                params.append(limit)
+                rows = conn.execute(
+                    f"SELECT run_id, pipeline_name, started_at, finished_at, status, total_steps "
+                    f"FROM runs {where} ORDER BY started_at DESC LIMIT ?",
+                    params,
+                ).fetchall()
                 return [dict(r) for r in rows]
             finally:
                 conn.row_factory = orig
