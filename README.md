@@ -1,159 +1,223 @@
 # PipelineHub
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PyPI version](https://img.shields.io/pypi/v/pipelinehub.svg)](https://pypi.org/project/pipelinehub/)
+[![Downloads](https://img.shields.io/pypi/dm/pipelinehub.svg)](https://pypi.org/project/pipelinehub/)
+[![CI](https://github.com/rahulxj100/pipelinehub/actions/workflows/ci.yml/badge.svg)](https://github.com/rahulxj100/pipelinehub/actions/workflows/ci.yml)
 
+**Python pipelines with automatic debugging built in.**
 
-A flexible Python library for creating custom data processing workflows with ease.
-
-## ✨ Features
-
-- 🔧 **Flexible**: Add any callable function as a processing step
-- 🔗 **Chainable**: Fluent method chaining for clean, readable code
-- 🐛 **Debuggable**: Verbose mode shows data flow between steps
-- 🧪 **Testable**: Clear error handling with step identification
-- 📦 **Lightweight**: Zero external dependencies
-- 🎯 **Type-friendly**: Full type hints for better IDE support
-- 🚀 **Performance**: Minimal overhead for maximum speed
-- 🔄 **Reusable**: Create pipelines once, use with different datasets
-
-## Installation
 ```bash
 pip install pipelinehub
 ```
 
-## 📖 Quick Start
-```python
-from pipelinehub import DataPipeline, normalize_data, square_numbers
+---
 
-# Create a pipeline with multiple steps
-pipeline = DataPipeline()
-pipeline.add_step(lambda x: [i for i in x if i > 0], "filter_positive")
-pipeline.add_step(square_numbers, "square")
-pipeline.add_step(normalize_data, "normalize")
+## The problem
 
-# Execute with sample data
-data = [-2, -1, 0, 1, 2, 3, 4, 5]
-result = pipeline.execute(data, verbose=True)
+Your pipeline fails at 2am. The stack trace points to step 9. The actual problem happened in step 4 — a column silently changed dtype and nobody caught it until three steps later.
 
-print(result)
-```
-## 🔗 Method Chaining
-Create pipelines fluently with method chaining:
+You spend the next four hours adding print statements, re-running on stale data, and guessing. I built this after doing exactly that, more times than I want to count.
+
+---
+
+## What it does
+
+pipelinehub captures your data at every step — shape, nulls, dtypes, statistics — without any configuration. When something breaks, you see what the data looked like going *into* the failing step, not just which line exploded.
 
 ```python
-from pipelinehub import DataPipeline, add_constant
+from pipelinehub import DataPipeline
 
-# Chain operations together
-result = (DataPipeline()
-          .add_step(lambda x: [i for i in x if i % 2 == 0], "filter_even")
-          .add_step(add_constant(10), "add_10")  
-          .add_step(lambda x: sorted(x, reverse=True), "sort_desc")
-          .execute([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]))
+pipeline = DataPipeline(name="ml-pipeline")
+pipeline.add_step(clean_data, "clean")
+pipeline.add_step(feature_engineer, "features")
+pipeline.add_step(normalize, "normalize")
 
-print(result) 
+result = pipeline.execute(df)
 ```
 
-## 📚 Comprehensive Examples
+When a step fails:
 
-### Data Cleaning Pipeline
-```python 
-from pipelinehub import DataPipeline, outlier_removal, normalize_data, calculate_stats
-
-# Create a data cleaning pipeline
-cleaning_pipeline = (DataPipeline()
-    .add_step(lambda x: [float(i) for i in x if i is not None], "convert_and_filter")
-    .add_step(lambda x: outlier_removal(x, threshold=2.5), "remove_outliers") 
-    .add_step(normalize_data, "normalize")
-    .add_step(calculate_stats, "final_stats"))
-
-# Process messy data
-messy_data = [1, 2, 3, None, 100, 4, 5, 6, 7, 8, 9]
-stats = cleaning_pipeline.execute(messy_data, verbose=True)
-print(stats)
 ```
-### Text Processing Pipeline
+PipelineStepError: Step "normalize" (step 3 of 3) failed
+
+Data entering this step:
+  type:    dataframe
+  shape:   (10420, 8)
+  nulls:   col_price: 142
+  dtypes:  col_id: object  col_price: float64
+
+Original error: TypeError: unsupported operand type(s) for +: 'float' and 'str'
+
+To replay from this step:
+  pipeline.replay_from("normalize", your_data)
+```
+
+---
+
+## Why not an AI assistant?
+
+An AI assistant needs you to notice something is wrong, copy the data, describe the problem, and ask. pipelinehub runs at 3am on a schedule — no human in the loop. It catches silent failures that never throw an exception: null counts that creep up, dtypes that silently change, row counts that drop 60% in one step.
+
+---
+
+## Why not Kedro or Airflow?
+
+Kedro requires a new project structure, a CLI, a data catalog, and YAML configs. Reasonable for a large team running production ML. Overkill if you're preprocessing data in a notebook or a script and just want visibility into what's happening at each step.
+
+Airflow is an orchestrator. It schedules and monitors jobs — it doesn't help you understand what's wrong inside one.
+
+pipelinehub is a library, not a framework. It adds one import and one method call to code you already have.
+
+---
+
+## Quick start
+
+```python
+from pipelinehub import DataPipeline
+
+pipeline = (DataPipeline(name="my-pipeline")
+    .add_step(lambda x: [i for i in x if i > 0], "filter_positive")
+    .add_step(lambda x: [i**2 for i in x], "square")
+    .add_step(lambda x: [i/max(x) for i in x], "normalize"))
+
+result = pipeline.execute([-2, -1, 0, 1, 2, 3, 4, 5])
+```
+
+Pass `debug=False` to skip snapshotting entirely — same behaviour as v0.1, no overhead:
+
+```python
+result = pipeline.execute(data, debug=False)
+```
+
+---
+
+## Features
+
+- **Automatic snapshots** — shape, dtypes, null counts, and numeric stats captured at every step, zero configuration
+- **Rich failure context** — `PipelineStepError` shows exactly what the data looked like entering the failing step
+- **Anomaly detection** — warns when null counts spike, dtypes change, rows drop more than 50%, or value distributions shift compared to the last run
+- **Run history** — every run stored locally in `.pipelinehub/runs.db`, no setup required
+- **Run comparison** — `pipeline.compare_runs()` diffs any two runs step by step
+- **Replay from any step** — re-run forward from any named step without re-running everything before it
+- **Fluent chaining** — method chaining works if you prefer that style
+- **No external dependencies** — stdlib only; pandas, polars, and numpy are detected and profiled if installed
+- **Full type hints** — works with IDE autocomplete
+
+---
+
+## Snapshot output
+
+When anomalies are detected, pipelinehub prints a summary after `execute()`:
+
+```
+Pipeline completed  ✓  (2.3s)
+
+  Step              Rows              Nulls          Duration
+  ──────────────────────────────────────────────────────────
+  clean             10500→10420       0→0            0.4s
+  feature_engineer  10420→10420       0→142 ⚠        1.1s
+  normalize         10420→10420       142→0          0.8s
+
+⚠  col_price nulls introduced in step "feature_engineer" (+142)
+```
+
+### Inspect run history
+
+```python
+# Last run with all step snapshots
+last = pipeline.last_run()
+
+# Recent runs
+pipeline.list_runs(limit=5)
+
+# Compare last two runs
+pipeline.compare_runs()
+
+# Compare specific runs by ID
+pipeline.compare_runs(run_id_a, run_id_b)
+```
+
+### Replay from a step
+
+```python
+# Fix normalize(), replay forward — skips clean and feature_engineer
+result = pipeline.replay_from("normalize", your_data)
+```
+
+---
+
+## Examples
+
+### Data cleaning
+
+```python
+from pipelinehub import DataPipeline
+
+pipeline = (DataPipeline(name="cleaning")
+    .add_step(lambda x: [float(i) for i in x if i is not None], "convert")
+    .add_step(lambda x: [i for i in x if abs(i - sum(x)/len(x)) < 2.5], "remove_outliers")
+    .add_step(lambda x: [(i - min(x)) / (max(x) - min(x)) for i in x], "normalize"))
+
+result = pipeline.execute([1, 2, 3, None, 100, 4, 5, 6, 7, 8, 9])
+```
+
+### Text processing
+
 ```python
 import re
 from pipelinehub import DataPipeline
 
-def clean_text(text):
-    """Remove special characters and extra whitespace."""
-    text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
-    return ' '.join(text.split())
-
-def extract_keywords(words, min_length=4):
-    """Extract words longer than min_length."""
-    return [word for word in words if len(word) >= min_length]
-
-# Build text processing pipeline
-text_pipeline = (DataPipeline()
+pipeline = (DataPipeline(name="text")
     .add_step(str.lower, "lowercase")
-    .add_step(clean_text, "clean")
-    .add_step(str.split, "tokenize") 
-    .add_step(lambda words: extract_keywords(words, min_length=4), "extract_keywords")
-    .add_step(lambda words: sorted(set(words)), "unique_and_sort"))
+    .add_step(lambda t: re.sub(r'[^a-zA-Z0-9\s]', '', t), "clean")
+    .add_step(str.split, "tokenize")
+    .add_step(lambda words: sorted(set(w for w in words if len(w) >= 4)), "keywords"))
 
-# Process text
-text = "Hello World! This is a Sample Text for Processing... With special chars!!!"
-keywords = text_pipeline.execute(text, verbose=True)
-print(keywords)
+result = pipeline.execute("Hello World! This is a Sample Text for Processing...")
 ```
 
-## Pipeline Management
+### Pipeline management
+
 ```python
-pipeline = DataPipeline()
+pipeline = DataPipeline(name="example")
 pipeline.add_step(lambda x: [i*2 for i in x], "double")
 pipeline.add_step(lambda x: [i+1 for i in x], "add_one")
 
-# Inspect pipeline
-print(len(pipeline))  # 2
-print(pipeline.get_steps())  # ['double', 'add_one']
-print(pipeline)  # DataPipeline(2 steps: double, add_one)
+print(pipeline.get_steps())   # ['double', 'add_one']
+print(len(pipeline))          # 2
 
-# Remove steps
-pipeline.remove_step(0)  # Remove first step
-print(pipeline.get_steps())  # ['add_one']
-
-# Clear all steps
+pipeline.remove_step(0)
 pipeline.clear_steps()
-print(len(pipeline))  # 0
-```
-## 🚀 Performance Tips
-
-- Use built-in functions when possible - they're optimized
-- Avoid creating large intermediate data structures
-- Consider using generators for large datasets:
-```python
-def generator_step(data):
-    """Use generator for memory efficiency."""
-    for item in data:
-        if item > 0:
-            yield item * 2
-
-pipeline = DataPipeline().add_step(lambda x: list(generator_step(x)), "process")
 ```
 
-## 🤝 Contributing
-Contributions are welcome! Here's how to get started:
+---
 
-- Fork the repository
-- Create a feature branch: git checkout -b feature/amazing-feature
-- Make your changes and add tests
-- Run tests: pytest tests/
-- Commit your changes: git commit -m 'Add amazing feature'
-- Push to branch: git push origin feature/amazing-feature
-- Open a Pull Request
+## Roadmap
 
-## 📄 License
-This project is licensed under the MIT License - see the LICENSE file for details.
-## 🙋‍♂️ Support
+**v0.1** ✅ — Fluent pipeline chaining, zero dependencies, verbose mode  
+**v0.2** ✅ — Automatic snapshot engine, rich failure context, run comparison, anomaly detection, replay  
+**v0.3** — Web dashboard for run history and team visibility  
 
-Discussions: GitHub Discussions
+---
 
-## 🎉 Acknowledgments
+## Contributing
 
-- Inspired by functional programming and Unix pipes philosophy
-- Built with ❤️ for the Python community
-- Thanks to all contributors and users!
+```bash
+git checkout -b feature/your-feature
+pytest tests/
+git commit -m 'Add your feature'
+# open a pull request against main
+```
 
+Branch protection is on `main` — all changes go through a PR.
 
+---
+
+## License
+
+MIT — see LICENSE for details.
+
+---
+
+*Built by [Rahul Paul](https://github.com/rahulxj100)*
