@@ -97,6 +97,15 @@ class TestSaveFailure:
         store.finish_run(run_id, "failed", datetime.datetime.utcnow().isoformat())
         run = store.get_run(run_id)
         assert run["status"] == "failed"
+        # Verify failure record stored correctly
+        with store._get_conn() as conn:
+            row = conn.execute(
+                "SELECT exception_type, exception_message FROM failures WHERE run_id = ?",
+                (run_id,)
+            ).fetchone()
+        assert row is not None
+        assert row[0] == "ValueError"
+        assert row[1] == "something went wrong"
 
 
 class TestFinishRun:

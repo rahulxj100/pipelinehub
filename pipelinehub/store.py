@@ -67,8 +67,12 @@ class RunStore:
     def _get_conn(self) -> Generator[sqlite3.Connection, None, None]:
         """Context manager: yields a connection, commits on exit, closes if file-based."""
         if self._persist_conn is not None:
-            yield self._persist_conn
-            self._persist_conn.commit()
+            try:
+                yield self._persist_conn
+                self._persist_conn.commit()
+            except Exception:
+                self._persist_conn.rollback()
+                raise
         else:
             conn = sqlite3.connect(self._db_path)
             try:
@@ -137,42 +141,54 @@ class RunStore:
     def get_last_run(self, pipeline_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Return the most recent run with all step snapshots. None if no runs exist."""
         with self._get_conn() as conn:
+            orig = conn.row_factory
             conn.row_factory = sqlite3.Row
-            if pipeline_name:
-                row = conn.execute(
-                    "SELECT * FROM runs WHERE pipeline_name = ? ORDER BY started_at DESC LIMIT 1",
-                    (pipeline_name,),
-                ).fetchone()
-            else:
-                row = conn.execute("SELECT * FROM runs ORDER BY started_at DESC LIMIT 1").fetchone()
-            if row is None:
-                return None
-            return self._hydrate_run(conn, dict(row))
+            try:
+                if pipeline_name:
+                    row = conn.execute(
+                        "SELECT * FROM runs WHERE pipeline_name = ? ORDER BY started_at DESC LIMIT 1",
+                        (pipeline_name,),
+                    ).fetchone()
+                else:
+                    row = conn.execute("SELECT * FROM runs ORDER BY started_at DESC LIMIT 1").fetchone()
+                if row is None:
+                    return None
+                return self._hydrate_run(conn, dict(row))
+            finally:
+                conn.row_factory = orig
 
     def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
         """Return a specific run with all step snapshots. None if not found."""
         with self._get_conn() as conn:
+            orig = conn.row_factory
             conn.row_factory = sqlite3.Row
-            row = conn.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
-            if row is None:
-                return None
-            return self._hydrate_run(conn, dict(row))
+            try:
+                row = conn.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+                if row is None:
+                    return None
+                return self._hydrate_run(conn, dict(row))
+            finally:
+                conn.row_factory = orig
 
     def _hydrate_run(self, conn: sqlite3.Connection, run: Dict[str, Any]) -> Dict[str, Any]:
+        orig = conn.row_factory
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT * FROM step_snapshots WHERE run_id = ? ORDER BY step_index",
-            (run["run_id"],),
-        ).fetchall()
-        run["steps"] = [
-            {
-                **dict(r),
-                "snapshot_before": json.loads(r["snapshot_before"]) if r["snapshot_before"] else None,
-                "snapshot_after": json.loads(r["snapshot_after"]) if r["snapshot_after"] else None,
-            }
-            for r in rows
-        ]
-        return run
+        try:
+            rows = conn.execute(
+                "SELECT * FROM step_snapshots WHERE run_id = ? ORDER BY step_index",
+                (run["run_id"],),
+            ).fetchall()
+            run["steps"] = [
+                {
+                    **dict(r),
+                    "snapshot_before": json.loads(r["snapshot_before"]) if r["snapshot_before"] else None,
+                    "snapshot_after": json.loads(r["snapshot_after"]) if r["snapshot_after"] else None,
+                }
+                for r in rows
+            ]
+            return run
+        finally:
+            conn.row_factory = orig
 
     def compare_runs(self, run_id_a: str, run_id_b: str) -> Dict[str, Any]:
         """Diff two runs step by step. Returns structured diff dict."""
@@ -253,17 +269,21 @@ class RunStore:
     def list_runs(self, pipeline_name: Optional[str] = None, limit: int = 10) -> List[Dict[str, Any]]:
         """List recent runs with metadata (no step snapshots)."""
         with self._get_conn() as conn:
+            orig = conn.row_factory
             conn.row_factory = sqlite3.Row
-            if pipeline_name:
-                rows = conn.execute(
-                    "SELECT run_id, pipeline_name, started_at, finished_at, status, total_steps "
-                    "FROM runs WHERE pipeline_name = ? ORDER BY started_at DESC LIMIT ?",
-                    (pipeline_name, limit),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT run_id, pipeline_name, started_at, finished_at, status, total_steps "
-                    "FROM runs ORDER BY started_at DESC LIMIT ?",
-                    (limit,),
-                ).fetchall()
-            return [dict(r) for r in rows]
+            try:
+                if pipeline_name:
+                    rows = conn.execute(
+                        "SELECT run_id, pipeline_name, started_at, finished_at, status, total_steps "
+                        "FROM runs WHERE pipeline_name = ? ORDER BY started_at DESC LIMIT ?",
+                        (pipeline_name, limit),
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        "SELECT run_id, pipeline_name, started_at, finished_at, status, total_steps "
+                        "FROM runs ORDER BY started_at DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+                return [dict(r) for r in rows]
+            finally:
+                conn.row_factory = orig
