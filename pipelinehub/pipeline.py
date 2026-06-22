@@ -332,9 +332,11 @@ class DataPipeline:
         return diff
 
     def _print_diff(
-        self, diff: Dict[str, Any], run_id_a: str, run_id_b: str
+        self, diff: Dict[str, Any], run_id_a: Optional[str], run_id_b: Optional[str]
     ) -> None:
-        print(f"\nRun comparison: {run_id_a[:8]}… vs {run_id_b[:8]}…\n")
+        a_label = run_id_a[:8] + "…" if run_id_a else "unknown"
+        b_label = run_id_b[:8] + "…" if run_id_b else "unknown"
+        print(f"\nRun comparison: {a_label} vs {b_label}\n")
         for step_name, step_diff in diff.get("steps", {}).items():
             status = step_diff.get("status", "")
             print(f"  Step: {step_name}  [{status}]")

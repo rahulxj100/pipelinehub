@@ -164,17 +164,17 @@ class TestCompareRuns:
         diff = p.compare_runs()
         assert diff == {}
 
-    def test_compare_runs_with_one_explicit_id_ignored(self, tmp_path):
-        """Providing only run_id_a should not silently discard it."""
+    def test_compare_runs_one_id_none_does_not_crash(self, tmp_path):
+        """compare_runs with run_id_a=None should not raise TypeError."""
         p = DataPipeline(name="test", db_path=str(tmp_path / "runs.db"))
         p.add_step(double, "double")
         p.execute([1, 2, 3], debug=True)
-        p.execute([1, 2, 3], debug=True)
         runs = p.list_runs()
-        # Providing both explicit IDs should use them (not auto-fetch)
-        diff = p.compare_runs(runs[1]["run_id"], runs[0]["run_id"])
-        assert "steps" in diff
-        assert diff != {}
+        # Only run_id_b provided; run_id_a=None causes _print_diff to be called with None
+        try:
+            p.compare_runs(run_id_b=runs[0]["run_id"])
+        except TypeError:
+            pytest.fail("compare_runs raised TypeError when run_id_a was None")
 
 
 class TestAnomalyDetection:
