@@ -6,6 +6,12 @@ from contextlib import suppress
 from typing import Any, Dict, Optional
 
 
+def _is_polars_numeric(dtype) -> bool:
+    """Check if a Polars dtype is numeric, compatible across versions."""
+    dtype_str = str(dtype).lower()
+    return any(t in dtype_str for t in ("int", "uint", "float", "decimal"))
+
+
 class DataProfiler:
     """Captures lightweight statistical fingerprints of data at each pipeline step."""
 
@@ -125,12 +131,7 @@ class DataProfiler:
         null_counts = {col: int(df[col].null_count()) for col in columns}
 
         sample = df.sample(n=min(10000, rows), seed=42) if rows > 10000 else df
-        numeric_types = (
-            pl.Float32, pl.Float64,
-            pl.Int8, pl.Int16, pl.Int32, pl.Int64,
-            pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64,
-        )
-        numeric_cols = [c for c in columns if df[c].dtype in numeric_types]
+        numeric_cols = [c for c in columns if _is_polars_numeric(df[c].dtype)]
         numeric_stats: Dict[str, Any] = {}
         for col in numeric_cols:
             s = sample[col].drop_nulls()

@@ -144,6 +144,7 @@ class DataPipeline:
             except Exception as e:
                 with suppress(Exception):
                     self._store.save_failure(run_id, step_name, i, snap_before, e)
+                with suppress(Exception):
                     self._store.finish_run(run_id, "failed", datetime.datetime.utcnow().isoformat())
                 with suppress(Exception):
                     self._store.prune_old_runs()
@@ -151,7 +152,8 @@ class DataPipeline:
 
             duration = time.time() - step_start
             snap_after = self._profiler.capture(result, step_name, "after")
-            self._store.save_step(run_id, step_name, i, snap_before, snap_after, duration)
+            with suppress(Exception):
+                self._store.save_step(run_id, step_name, i, snap_before, snap_after, duration)
 
             anomalies = self._detect_anomalies(
                 step_name, snap_before, snap_after, prev_snap_after,
