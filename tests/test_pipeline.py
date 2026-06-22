@@ -57,3 +57,7 @@ class TestDataPipeline:
         pipeline.remove_step(0)
         assert len(pipeline) == 1
         assert pipeline.get_steps() == ["step2"]
+
+    def test_init_wrong_type_raises(self):
+        with pytest.raises(TypeError):
+            DataPipeline([1, 2, 3])

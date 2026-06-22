@@ -3,7 +3,7 @@
 from typing import Any, Dict
 
 
-class PipelineStepError(Exception):
+class PipelineStepError(RuntimeError):
     """Exception raised when a pipeline step fails, with full data snapshot context."""
 
     def __init__(

@@ -31,6 +31,11 @@ class DataPipeline:
             name: Pipeline name, used to group runs in history.
             db_path: Path to SQLite database. Use ":memory:" for testing.
         """
+        if not isinstance(name, str):
+            raise TypeError(
+                f"DataPipeline() first argument must be a name string, not {type(name).__name__!r}. "
+                f"Use set_data() or pass data to execute() instead."
+            )
         self.name = name
         self.data: Any = None
         self.steps: List[Callable] = []
@@ -326,6 +331,9 @@ class DataPipeline:
                 return {}
             run_id_b = runs[0]["run_id"]
             run_id_a = runs[1]["run_id"]
+        elif run_id_a is None or run_id_b is None:
+            print("Provide both run IDs together, or neither to compare the last two runs.")
+            return {}
 
         diff = self._store.compare_runs(run_id_a, run_id_b)
         self._print_diff(diff, run_id_a, run_id_b)

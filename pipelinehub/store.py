@@ -53,7 +53,7 @@ class RunStore:
         Args:
             db_path: Path to the SQLite database file, or ":memory:" for in-memory.
         """
-        self._db_path = db_path
+        self._db_path = db_path if db_path == ":memory:" else os.path.abspath(db_path)
         self._persist_conn: Optional[sqlite3.Connection] = None
 
         if db_path == ":memory:":
@@ -71,7 +71,10 @@ class RunStore:
                 yield self._persist_conn
                 self._persist_conn.commit()
             except Exception:
-                self._persist_conn.rollback()
+                try:
+                    self._persist_conn.rollback()
+                except Exception:
+                    pass
                 raise
         else:
             conn = sqlite3.connect(self._db_path)
@@ -146,11 +149,11 @@ class RunStore:
             try:
                 if pipeline_name:
                     row = conn.execute(
-                        "SELECT * FROM runs WHERE pipeline_name = ? ORDER BY started_at DESC LIMIT 1",
+                        "SELECT * FROM runs WHERE pipeline_name = ? AND status = 'success' ORDER BY started_at DESC LIMIT 1",
                         (pipeline_name,),
                     ).fetchone()
                 else:
-                    row = conn.execute("SELECT * FROM runs ORDER BY started_at DESC LIMIT 1").fetchone()
+                    row = conn.execute("SELECT * FROM runs WHERE status = 'success' ORDER BY started_at DESC LIMIT 1").fetchone()
                 if row is None:
                     return None
                 return self._hydrate_run(conn, dict(row))
@@ -248,8 +251,8 @@ class RunStore:
                 }
 
             elif da in ("sequence", "array") and db_ in ("sequence", "array"):
-                len_a = pa.get("length") or (pa.get("shape") or [None])[0]
-                len_b = pb.get("length") or (pb.get("shape") or [None])[0]
+                len_a = pa.get("length") if "length" in pa else (pa.get("shape") or [None])[0]
+                len_b = pb.get("length") if "length" in pb else (pb.get("shape") or [None])[0]
                 step_diff["length"] = {"a": len_a, "b": len_b}
 
             diff["steps"][step_name] = step_diff
