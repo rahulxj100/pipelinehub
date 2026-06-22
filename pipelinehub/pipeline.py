@@ -4,6 +4,7 @@ Core DataPipeline class — v0.2 with transparent snapshot engine.
 
 import datetime
 import time
+import warnings
 from contextlib import suppress
 from typing import Any, Callable, Dict, List, Optional
 
@@ -33,12 +34,17 @@ class DataPipeline:
             db_path: Path to SQLite database. Use ":memory:" for testing.
         """
         if not isinstance(name, str):
-            raise TypeError(
-                f"DataPipeline() first argument must be a name string, not {type(name).__name__!r}. "
-                f"Use set_data() or pass data to execute() instead."
+            warnings.warn(
+                "Passing data to DataPipeline() is deprecated and will be removed in v0.3. "
+                "Use set_data() or pass data to execute() instead.",
+                DeprecationWarning,
+                stacklevel=2,
             )
+            self.data = name
+            name = "pipeline"
+        else:
+            self.data = None
         self.name = name
-        self.data: Any = None
         self.steps: List[Callable] = []
         self.step_names: List[str] = []
         self._profiler = DataProfiler()
@@ -168,7 +174,8 @@ class DataPipeline:
             current_data = result
 
         finished_at = datetime.datetime.utcnow().isoformat()
-        self._store.finish_run(run_id, "success", finished_at)
+        with suppress(Exception):
+            self._store.finish_run(run_id, "success", finished_at)
         with suppress(Exception):
             self._store.prune_old_runs()
 

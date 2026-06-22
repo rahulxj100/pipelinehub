@@ -58,6 +58,11 @@ class TestDataPipeline:
         assert len(pipeline) == 1
         assert pipeline.get_steps() == ["step2"]
 
-    def test_init_wrong_type_raises(self):
-        with pytest.raises(TypeError):
-            DataPipeline([1, 2, 3])
+    def test_init_with_data_positional_warns(self):
+        import warnings
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            pipeline = DataPipeline([1, 2, 3])
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+        assert pipeline.data == [1, 2, 3]

@@ -237,7 +237,7 @@ class RunStore:
                 for col in set(list(stats_a) + list(stats_b)):
                     ma = (stats_a.get(col) or {}).get("mean")
                     mb = (stats_b.get(col) or {}).get("mean")
-                    if ma is not None and mb is not None and ma != 0:
+                    if ma is not None and mb is not None and abs(ma) > 1e-9:
                         shift = abs(mb - ma) / abs(ma)
                         if shift > 0.10:
                             mean_shifts[col] = {"a": ma, "b": mb, "shift_pct": round(shift * 100, 2)}
