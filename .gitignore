@@ -247,3 +247,6 @@ secrets.txt
 
 # Local design specs
 docs/superpowers/
+
+# Pipeline run history
+.pipelinehub/
