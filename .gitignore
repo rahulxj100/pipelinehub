@@ -244,3 +244,6 @@ Thumbs.db
 *.key
 secrets.txt
 .secrets
+
+# Local design specs
+docs/superpowers/
