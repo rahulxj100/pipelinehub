@@ -80,3 +80,8 @@ class TestPipelineStepError:
         with pytest.raises(PipelineStepError) as exc_info:
             raise PipelineStepError("s", 0, snap, ValueError("original"))
         assert exc_info.value.step_name == "s"
+
+    def test_is_runtime_error_subclass(self):
+        snap = self._make_sequence_snapshot()
+        err = PipelineStepError("s", 0, snap, ValueError("x"))
+        assert isinstance(err, RuntimeError)

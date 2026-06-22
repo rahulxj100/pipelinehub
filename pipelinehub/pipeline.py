@@ -4,6 +4,7 @@ Core DataPipeline class — v0.2 with transparent snapshot engine.
 
 import datetime
 import time
+from contextlib import suppress
 from typing import Any, Callable, Dict, List, Optional
 
 from pipelinehub.errors import PipelineStepError
@@ -143,7 +144,8 @@ class DataPipeline:
             except Exception as e:
                 self._store.save_failure(run_id, step_name, i, snap_before, e)
                 self._store.finish_run(run_id, "failed", datetime.datetime.utcnow().isoformat())
-                self._store.prune_old_runs()
+                with suppress(Exception):
+                    self._store.prune_old_runs()
                 raise PipelineStepError(step_name, i, snap_before, e)
 
             duration = time.time() - step_start
@@ -164,7 +166,8 @@ class DataPipeline:
 
         finished_at = datetime.datetime.utcnow().isoformat()
         self._store.finish_run(run_id, "success", finished_at)
-        self._store.prune_old_runs()
+        with suppress(Exception):
+            self._store.prune_old_runs()
 
         if verbose or all_anomalies:
             self._print_summary(step_summaries, time.time() - run_start, all_anomalies)
@@ -198,13 +201,15 @@ class DataPipeline:
                         )
 
                 nulls_now = profile_after.get("null_counts", {})
-                nulls_prev = prev_profile.get("null_counts", {})
-                for col, count_now in nulls_now.items():
-                    increase = count_now - nulls_prev.get(col, 0)
-                    if increase > 100:
-                        anomalies.append(
-                            f'⚠  {col} nulls introduced in step "{step_name}" (+{increase})'
-                        )
+                prev_dtype = prev_snap_after.get("dtype") if prev_snap_after else None
+                if prev_dtype == "dataframe":
+                    nulls_prev = prev_profile.get("null_counts", {})
+                    for col, count_now in nulls_now.items():
+                        increase = count_now - nulls_prev.get(col, 0)
+                        if increase > 100:
+                            anomalies.append(
+                                f'⚠  {col} nulls introduced in step "{step_name}" (+{increase})'
+                            )
 
                 dtypes_now = profile_after.get("dtypes", {})
                 dtypes_prev = prev_profile.get("dtypes", {})
@@ -325,7 +330,8 @@ class DataPipeline:
         Prints a human-readable diff and returns the raw diff dict.
         """
         if run_id_a is None and run_id_b is None:
-            runs = self._store.list_runs(pipeline_name=self.name, limit=2)
+            runs = [r for r in self._store.list_runs(pipeline_name=self.name, limit=10)
+                    if r["status"] == "success"][:2]
             if len(runs) < 2:
                 print("Not enough runs to compare (need at least 2)")
                 return {}
