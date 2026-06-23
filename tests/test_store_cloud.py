@@ -227,3 +227,42 @@ class TestCloudSync:
                 run = store.get_run(run_id)
                 assert run is not None
                 assert run["pipeline_name"] == "p"
+
+
+class TestDataPipelineCloudKey:
+
+    def test_api_key_passed_to_store(self):
+        from pipelinehub.pipeline import DataPipeline
+        pipeline = DataPipeline(name="p", api_key="ph_live_abc")
+        assert pipeline._store._api_key == "ph_live_abc"
+
+    def test_api_url_passed_to_store(self):
+        from pipelinehub.pipeline import DataPipeline
+        pipeline = DataPipeline(name="p", api_key="ph_live_x", api_url="http://localhost:8000")
+        assert pipeline._store._api_url == "http://localhost:8000"
+
+    def test_no_api_key_by_default(self):
+        from pipelinehub.pipeline import DataPipeline
+        pipeline = DataPipeline(name="p")
+        assert pipeline._store._api_key is None
+
+    def test_env_var_picked_up_via_store(self, monkeypatch):
+        from pipelinehub.pipeline import DataPipeline
+        monkeypatch.setenv("PIPELINEHUB_API_KEY", "ph_live_env")
+        pipeline = DataPipeline(name="p")
+        assert pipeline._store._api_key == "ph_live_env"
+
+    def test_execute_fires_cloud_calls(self):
+        from pipelinehub.pipeline import DataPipeline
+        pipeline = DataPipeline(
+            name="p",
+            db_path=":memory:",
+            api_key="ph_live_x",
+            api_url="http://localhost:8000",
+        )
+        pipeline.add_step(lambda x: x)
+        with patch("pipelinehub.store.threading.Thread", side_effect=make_sync_thread):
+            with patch("urllib.request.urlopen") as mock_open:
+                pipeline.execute([1, 2, 3])
+                urls_called = [c[0][0].full_url for c in mock_open.call_args_list]
+                assert any("/v1/runs" == u.replace("http://localhost:8000", "") for u in urls_called)
