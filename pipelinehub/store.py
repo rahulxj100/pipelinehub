@@ -4,6 +4,8 @@ import datetime
 import json
 import os
 import sqlite3
+import threading
+import urllib.request
 import uuid
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Optional
@@ -46,15 +48,24 @@ CREATE TABLE IF NOT EXISTS failures (
 class RunStore:
     """Persists pipeline run history to a local SQLite database."""
 
-    def __init__(self, db_path: str = ".pipelinehub/runs.db") -> None:
+    def __init__(
+        self,
+        db_path: str = ".pipelinehub/runs.db",
+        api_key: Optional[str] = None,
+        api_url: str = "https://api.pipelinehub.cloud",
+    ) -> None:
         """
         Create directory if needed, connect to SQLite, create tables.
 
         Args:
             db_path: Path to the SQLite database file, or ":memory:" for in-memory.
+            api_key: Optional API key for cloud sync. Falls back to PIPELINEHUB_API_KEY env var.
+            api_url: Base URL for cloud API. Defaults to https://api.pipelinehub.cloud.
         """
         self._db_path = db_path if db_path == ":memory:" else os.path.abspath(db_path)
         self._persist_conn: Optional[sqlite3.Connection] = None
+        self._api_key = api_key or os.environ.get("PIPELINEHUB_API_KEY")
+        self._api_url = api_url.rstrip("/")
 
         if db_path == ":memory:":
             self._persist_conn = sqlite3.connect(":memory:")
@@ -90,6 +101,32 @@ class RunStore:
     def _create_tables(self) -> None:
         with self._get_conn() as conn:
             conn.executescript(_SCHEMA)
+
+    def _cloud_post(self, path: str, payload: dict, method: str = "POST") -> None:
+        """Post data to cloud API in a background daemon thread."""
+        if not self._api_key:
+            return
+        api_key = self._api_key
+        url = self._api_url + path
+        data = json.dumps(payload).encode("utf-8")
+
+        def _send():
+            try:
+                req = urllib.request.Request(
+                    url,
+                    data=data,
+                    method=method,
+                    headers={
+                        "Authorization": "Bearer " + api_key,
+                        "Content-Type": "application/json",
+                    },
+                )
+                urllib.request.urlopen(req, timeout=5)
+            except Exception:
+                pass
+
+        t = threading.Thread(target=_send, daemon=True)
+        t.start()
 
     def start_run(self, pipeline_name: str, total_steps: int) -> str:
         """Insert a new run record. Returns the generated run_id."""
