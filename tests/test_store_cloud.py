@@ -125,3 +125,105 @@ class TestCloudPost:
                 if created_threads:
                     created_threads[0].join(timeout=1.0)
                     assert created_threads[0].daemon is True
+
+
+class TestCloudSync:
+
+    def _store(self, url="http://localhost:8000"):
+        return RunStore(db_path=":memory:", api_key="ph_live_x", api_url=url)
+
+    def test_start_run_posts_to_v1_runs(self):
+        store = self._store()
+        with patch("pipelinehub.store.threading.Thread", side_effect=make_sync_thread):
+            with patch("urllib.request.urlopen") as mock_open:
+                run_id = store.start_run("my_pipeline", 3)
+                req = mock_open.call_args[0][0]
+                assert req.full_url == "http://localhost:8000/v1/runs"
+                assert req.get_method() == "POST"
+                body = json.loads(req.data)
+                assert body["run_id"] == run_id
+                assert body["pipeline_name"] == "my_pipeline"
+                assert body["total_steps"] == 3
+                assert "started_at" in body
+
+    def test_save_step_posts_to_steps_endpoint(self):
+        store = self._store()
+        with patch("pipelinehub.store.threading.Thread", side_effect=make_sync_thread):
+            with patch("urllib.request.urlopen") as mock_open:
+                run_id = store.start_run("p", 1)
+                mock_open.reset_mock()
+                snap = {"step_name": "s1", "stage": "before", "dtype": "sequence",
+                        "timestamp": "2025-01-01T00:00:00", "profile": {}}
+                store.save_step(run_id, "s1", 0, snap, snap, 0.5)
+                req = mock_open.call_args[0][0]
+                assert req.full_url == f"http://localhost:8000/v1/runs/{run_id}/steps"
+                assert req.get_method() == "POST"
+                body = json.loads(req.data)
+                assert body["step_name"] == "s1"
+                assert body["step_index"] == 0
+                assert body["duration_seconds"] == pytest.approx(0.5)
+                assert "snapshot_before" in body
+                assert "snapshot_after" in body
+
+    def test_save_failure_posts_to_failure_endpoint(self):
+        store = self._store()
+        with patch("pipelinehub.store.threading.Thread", side_effect=make_sync_thread):
+            with patch("urllib.request.urlopen") as mock_open:
+                run_id = store.start_run("p", 1)
+                mock_open.reset_mock()
+                snap = {"step_name": "s1", "stage": "before", "dtype": "sequence",
+                        "timestamp": "2025-01-01T00:00:00", "profile": {}}
+                exc = ValueError("bad data")
+                store.save_failure(run_id, "s1", 0, snap, exc)
+                req = mock_open.call_args[0][0]
+                assert req.full_url == f"http://localhost:8000/v1/runs/{run_id}/failure"
+                assert req.get_method() == "POST"
+                body = json.loads(req.data)
+                assert body["step_name"] == "s1"
+                assert body["exception_type"] == "ValueError"
+                assert body["exception_message"] == "bad data"
+
+    def test_finish_run_patches_run(self):
+        store = self._store()
+        with patch("pipelinehub.store.threading.Thread", side_effect=make_sync_thread):
+            with patch("urllib.request.urlopen") as mock_open:
+                run_id = store.start_run("p", 1)
+                mock_open.reset_mock()
+                store.finish_run(run_id, "success", "2025-01-01T12:00:00")
+                req = mock_open.call_args[0][0]
+                assert req.full_url == f"http://localhost:8000/v1/runs/{run_id}"
+                assert req.get_method() == "PATCH"
+                body = json.loads(req.data)
+                assert body["status"] == "success"
+                assert body["finished_at"] == "2025-01-01T12:00:00"
+
+    def test_no_cloud_call_without_api_key(self):
+        store = RunStore(db_path=":memory:")
+        with patch("urllib.request.urlopen") as mock_open:
+            run_id = store.start_run("p", 1)
+            snap = {"step_name": "s1", "stage": "before", "dtype": "sequence",
+                    "timestamp": "2025-01-01T00:00:00", "profile": {}}
+            store.save_step(run_id, "s1", 0, snap, snap, 0.1)
+            store.save_failure(run_id, "s1", 0, snap, ValueError("x"))
+            store.finish_run(run_id, "success", "2025-01-01T00:00:00")
+            mock_open.assert_not_called()
+
+    def test_cloud_failure_does_not_raise(self):
+        store = self._store()
+        with patch("pipelinehub.store.threading.Thread", side_effect=make_sync_thread):
+            with patch("urllib.request.urlopen", side_effect=OSError("timeout")):
+                # None of these should raise
+                run_id = store.start_run("p", 1)
+                snap = {"step_name": "s1", "stage": "before", "dtype": "sequence",
+                        "timestamp": "2025-01-01T00:00:00", "profile": {}}
+                store.save_step(run_id, "s1", 0, snap, snap, 0.1)
+                store.finish_run(run_id, "success", "2025-01-01T00:00:00")
+
+    def test_sqlite_write_succeeds_even_when_cloud_fails(self):
+        store = self._store()
+        with patch("pipelinehub.store.threading.Thread", side_effect=make_sync_thread):
+            with patch("urllib.request.urlopen", side_effect=OSError("timeout")):
+                run_id = store.start_run("p", 1)
+                run = store.get_run(run_id)
+                assert run is not None
+                assert run["pipeline_name"] == "p"

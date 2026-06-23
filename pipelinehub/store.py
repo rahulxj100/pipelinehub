@@ -137,6 +137,13 @@ class RunStore:
                 "INSERT INTO runs (run_id, pipeline_name, started_at, status, total_steps) VALUES (?, ?, ?, ?, ?)",
                 (run_id, pipeline_name, started_at, "running", total_steps),
             )
+        self._cloud_post("/v1/runs", {
+            "run_id": run_id,
+            "pipeline_name": pipeline_name,
+            "started_at": started_at,
+            "total_steps": total_steps,
+            "status": "running",
+        })
         return run_id
 
     def save_step(
@@ -154,6 +161,14 @@ class RunStore:
                 "INSERT INTO step_snapshots (run_id, step_name, step_index, snapshot_before, snapshot_after, duration_seconds) VALUES (?, ?, ?, ?, ?, ?)",
                 (run_id, step_name, step_index, json.dumps(snapshot_before), json.dumps(snapshot_after), duration_seconds),
             )
+        self._cloud_post(f"/v1/runs/{run_id}/steps", {
+            "run_id": run_id,
+            "step_name": step_name,
+            "step_index": step_index,
+            "snapshot_before": snapshot_before,
+            "snapshot_after": snapshot_after,
+            "duration_seconds": duration_seconds,
+        })
 
     def save_failure(
         self,
@@ -169,6 +184,14 @@ class RunStore:
                 "INSERT INTO failures (run_id, step_name, step_index, snapshot_before, exception_type, exception_message) VALUES (?, ?, ?, ?, ?, ?)",
                 (run_id, step_name, step_index, json.dumps(snapshot_before), type(exception).__name__, str(exception)),
             )
+        self._cloud_post(f"/v1/runs/{run_id}/failure", {
+            "run_id": run_id,
+            "step_name": step_name,
+            "step_index": step_index,
+            "snapshot_before": snapshot_before,
+            "exception_type": type(exception).__name__,
+            "exception_message": str(exception),
+        })
 
     def finish_run(self, run_id: str, status: str, finished_at: str) -> None:
         """Update run record with finish time and status."""
@@ -177,6 +200,10 @@ class RunStore:
                 "UPDATE runs SET status = ?, finished_at = ? WHERE run_id = ?",
                 (status, finished_at, run_id),
             )
+        self._cloud_post(f"/v1/runs/{run_id}", {
+            "status": status,
+            "finished_at": finished_at,
+        }, method="PATCH")
 
     def get_last_run(self, pipeline_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Return the most recent run with all step snapshots. None if no runs exist."""
