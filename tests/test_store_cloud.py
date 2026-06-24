@@ -109,7 +109,7 @@ class TestCloudPost:
                 # Must not raise
                 store._cloud_post("/v1/runs", {"run_id": "abc"})
 
-    def test_runs_in_daemon_thread(self):
+    def test_runs_in_non_daemon_thread(self):
         store = RunStore(db_path=":memory:", api_key="ph_live_x", api_url="http://localhost:8000")
         created_threads = []
         original_thread = threading.Thread
@@ -124,7 +124,7 @@ class TestCloudPost:
                 store._cloud_post("/v1/runs", {"run_id": "abc"})
                 if created_threads:
                     created_threads[0].join(timeout=1.0)
-                    assert created_threads[0].daemon is True
+                    assert created_threads[0].daemon is False
 
 
 class TestCloudSync:
