@@ -100,6 +100,7 @@ result = pipeline.execute(data, debug=False)
 - **Run history** — every run stored locally in `.pipelinehub/runs.db`, no setup required
 - **Run comparison** — `pipeline.compare_runs()` diffs any two runs step by step
 - **Replay from any step** — re-run forward from any named step without re-running everything before it
+- **`ph` CLI** — inspect run history, diff runs, and watch live execution from the terminal
 - **Fluent chaining** — method chaining works if you prefer that style
 - **No external dependencies** — stdlib only; pandas, polars, and numpy are detected and profiled if installed
 - **Full type hints** — works with IDE autocomplete
@@ -143,6 +144,48 @@ pipeline.compare_runs(run_id_a, run_id_b)
 ```python
 # Fix normalize(), replay forward — skips clean and feature_engineer
 result = pipeline.replay_from("normalize", your_data)
+```
+
+---
+
+## `ph` CLI
+
+`pip install pipelinehub` also installs the `ph` command. It reads from `.pipelinehub/runs.db` in your project — no auth, no setup.
+
+```bash
+# List recent runs
+ph runs list
+
+# Show last completed run
+ph runs last
+
+# Step-by-step detail for a specific run
+ph runs show <run_id>
+
+# Diff two runs
+ph runs diff <run_id_a> <run_id_b>
+
+# Watch a pipeline execute in real time (polls every 1s)
+ph runs watch
+
+# Health summary across all pipelines
+ph status
+
+# Aggregate stats — success rate, failure count
+ph stats
+
+# Check setup
+ph doctor
+```
+
+Example output for `ph runs list`:
+
+```
+  ID         Pipeline               Started                Status       Steps
+  ──────────────────────────────────────────────────────────────────────────
+  a3f2c1b0   ml-pipeline            2026-06-24 09:12:03    ✅ success    4
+  7d91e4a2   ml-pipeline            2026-06-23 22:47:11    ❌ failed     3
+  c58b0f31   etl-daily              2026-06-23 06:00:02    ✅ success    6
 ```
 
 ---
@@ -196,7 +239,7 @@ pipeline.clear_steps()
 ## Roadmap
 
 **v0.1** ✅ — Fluent pipeline chaining, zero dependencies, verbose mode  
-**v0.2** ✅ — Automatic snapshot engine, rich failure context, run comparison, anomaly detection, replay  
+**v0.2** ✅ — Automatic snapshot engine, rich failure context, run comparison, anomaly detection, replay, `ph` CLI  
 **v0.3** — Web dashboard for run history and team visibility  
 
 ---
