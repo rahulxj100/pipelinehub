@@ -25,6 +25,8 @@ class DataPipeline:
         self,
         name: str = "pipeline",
         db_path: str = ".pipelinehub/runs.db",
+        api_key: Optional[str] = None,
+        api_url: str = "https://api.pipelinehub.cloud",
     ) -> None:
         """
         Initialize a new DataPipeline.
@@ -32,6 +34,8 @@ class DataPipeline:
         Args:
             name: Pipeline name, used to group runs in history.
             db_path: Path to SQLite database. Use ":memory:" for testing.
+            api_key: Optional API key for cloud sync. Falls back to PIPELINEHUB_API_KEY env var.
+            api_url: Base URL for cloud API. Defaults to https://api.pipelinehub.cloud.
         """
         if not isinstance(name, str):
             warnings.warn(
@@ -48,7 +52,7 @@ class DataPipeline:
         self.steps: List[Callable] = []
         self.step_names: List[str] = []
         self._profiler = DataProfiler()
-        self._store = RunStore(db_path=db_path)
+        self._store = RunStore(db_path=db_path, api_key=api_key, api_url=api_url)
 
     def add_step(self, func: Callable, name: Optional[str] = None) -> "DataPipeline":
         """

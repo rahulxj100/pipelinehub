@@ -250,5 +250,5 @@ docs/superpowers/
 docs/
 # Pipeline run history
 .pipelinehub/
-todo.md 
+todo.md
 test.py

@@ -4,6 +4,8 @@ import datetime
 import json
 import os
 import sqlite3
+import threading
+import urllib.request
 import uuid
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Optional
@@ -46,15 +48,24 @@ CREATE TABLE IF NOT EXISTS failures (
 class RunStore:
     """Persists pipeline run history to a local SQLite database."""
 
-    def __init__(self, db_path: str = ".pipelinehub/runs.db") -> None:
+    def __init__(
+        self,
+        db_path: str = ".pipelinehub/runs.db",
+        api_key: Optional[str] = None,
+        api_url: str = "https://api.pipelinehub.cloud",
+    ) -> None:
         """
         Create directory if needed, connect to SQLite, create tables.
 
         Args:
             db_path: Path to the SQLite database file, or ":memory:" for in-memory.
+            api_key: Optional API key for cloud sync. Falls back to PIPELINEHUB_API_KEY env var.
+            api_url: Base URL for cloud API. Defaults to https://api.pipelinehub.cloud.
         """
         self._db_path = db_path if db_path == ":memory:" else os.path.abspath(db_path)
         self._persist_conn: Optional[sqlite3.Connection] = None
+        self._api_key = api_key or os.environ.get("PIPELINEHUB_API_KEY")
+        self._api_url = api_url.rstrip("/")
 
         if db_path == ":memory:":
             self._persist_conn = sqlite3.connect(":memory:")
@@ -91,6 +102,32 @@ class RunStore:
         with self._get_conn() as conn:
             conn.executescript(_SCHEMA)
 
+    def _cloud_post(self, path: str, payload: dict, method: str = "POST") -> None:
+        """Post data to cloud API in a background daemon thread."""
+        if not self._api_key:
+            return
+        api_key = self._api_key
+        url = self._api_url + path
+        data = json.dumps(payload).encode("utf-8")
+
+        def _send():
+            try:
+                req = urllib.request.Request(
+                    url,
+                    data=data,
+                    method=method,
+                    headers={
+                        "Authorization": "Bearer " + api_key,
+                        "Content-Type": "application/json",
+                    },
+                )
+                urllib.request.urlopen(req, timeout=5)
+            except Exception:
+                pass
+
+        t = threading.Thread(target=_send, daemon=True)
+        t.start()
+
     def start_run(self, pipeline_name: str, total_steps: int) -> str:
         """Insert a new run record. Returns the generated run_id."""
         run_id = str(uuid.uuid4())
@@ -100,6 +137,13 @@ class RunStore:
                 "INSERT INTO runs (run_id, pipeline_name, started_at, status, total_steps) VALUES (?, ?, ?, ?, ?)",
                 (run_id, pipeline_name, started_at, "running", total_steps),
             )
+        self._cloud_post("/v1/runs", {
+            "run_id": run_id,
+            "pipeline_name": pipeline_name,
+            "started_at": started_at,
+            "total_steps": total_steps,
+            "status": "running",
+        })
         return run_id
 
     def save_step(
@@ -117,6 +161,14 @@ class RunStore:
                 "INSERT INTO step_snapshots (run_id, step_name, step_index, snapshot_before, snapshot_after, duration_seconds) VALUES (?, ?, ?, ?, ?, ?)",
                 (run_id, step_name, step_index, json.dumps(snapshot_before), json.dumps(snapshot_after), duration_seconds),
             )
+        self._cloud_post(f"/v1/runs/{run_id}/steps", {
+            "run_id": run_id,
+            "step_name": step_name,
+            "step_index": step_index,
+            "snapshot_before": snapshot_before,
+            "snapshot_after": snapshot_after,
+            "duration_seconds": duration_seconds,
+        })
 
     def save_failure(
         self,
@@ -132,6 +184,14 @@ class RunStore:
                 "INSERT INTO failures (run_id, step_name, step_index, snapshot_before, exception_type, exception_message) VALUES (?, ?, ?, ?, ?, ?)",
                 (run_id, step_name, step_index, json.dumps(snapshot_before), type(exception).__name__, str(exception)),
             )
+        self._cloud_post(f"/v1/runs/{run_id}/failure", {
+            "run_id": run_id,
+            "step_name": step_name,
+            "step_index": step_index,
+            "snapshot_before": snapshot_before,
+            "exception_type": type(exception).__name__,
+            "exception_message": str(exception),
+        })
 
     def finish_run(self, run_id: str, status: str, finished_at: str) -> None:
         """Update run record with finish time and status."""
@@ -140,6 +200,10 @@ class RunStore:
                 "UPDATE runs SET status = ?, finished_at = ? WHERE run_id = ?",
                 (status, finished_at, run_id),
             )
+        self._cloud_post(f"/v1/runs/{run_id}", {
+            "status": status,
+            "finished_at": finished_at,
+        }, method="PATCH")
 
     def get_last_run(self, pipeline_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Return the most recent run with all step snapshots. None if no runs exist."""
