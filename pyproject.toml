@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pipelinehub"
-version = "0.1.7"
+version = "0.1.8"
 authors = [
     {name = "Rahul Paul", email = "paul.rahulxj100@gmail.com"},
 ]
@@ -55,7 +55,7 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 
 [tool.bumpversion]
-current_version = "0.1.7"
+current_version = "0.1.8"
 commit = true
 tag = true
 message = "chore: bump version to {new_version} [skip ci]"
