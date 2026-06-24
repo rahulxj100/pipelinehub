@@ -29,6 +29,9 @@ classifiers = [
 keywords = ["pipeline", "data", "processing", "workflow", "etl"]
 dependencies = []
 
+[project.scripts]
+ph = "pipelinehub.cli:main"
+
 [project.optional-dependencies]
 dev = ["pytest>=6.0", "black", "flake8", "mypy"]
 
