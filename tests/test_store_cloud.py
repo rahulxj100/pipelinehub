@@ -145,6 +145,7 @@ class TestCloudSync:
                 assert body["pipeline_name"] == "my_pipeline"
                 assert body["total_steps"] == 3
                 assert "started_at" in body
+                assert body["status"] == "running"
 
     def test_save_step_posts_to_steps_endpoint(self):
         store = self._store()
@@ -243,7 +244,7 @@ class TestDataPipelineCloudKey:
 
     def test_no_api_key_by_default(self):
         from pipelinehub.pipeline import DataPipeline
-        pipeline = DataPipeline(name="p")
+        pipeline = DataPipeline(name="p", db_path=":memory:")
         assert pipeline._store._api_key is None
 
     def test_env_var_picked_up_via_store(self, monkeypatch):
