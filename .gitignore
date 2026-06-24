@@ -75,7 +75,7 @@ docs/_build/
 # PyBuilder
 .pybuilder/
 target/
-
+ff
 # Jupyter Notebook
 .ipynb_checkpoints
 
@@ -247,6 +247,6 @@ secrets.txt
 
 # Local design specs
 docs/superpowers/
-
+docs/
 # Pipeline run history
 .pipelinehub/
