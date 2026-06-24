@@ -102,8 +102,8 @@ class RunStore:
         with self._get_conn() as conn:
             conn.executescript(_SCHEMA)
 
-    def _cloud_post(self, path: str, payload: dict, method: str = "POST") -> None:
-        """Post data to cloud API in a background daemon thread."""
+    def _cloud_post(self, path: str, payload: dict, method: str = "POST", sync: bool = False) -> None:
+        """Post data to cloud API. sync=True blocks until complete (used for start_run)."""
         if not self._api_key:
             return
         api_key = self._api_key
@@ -121,12 +121,15 @@ class RunStore:
                         "Content-Type": "application/json",
                     },
                 )
-                urllib.request.urlopen(req, timeout=5)
+                urllib.request.urlopen(req, timeout=10)
             except Exception:
                 pass
 
-        t = threading.Thread(target=_send, daemon=True)
-        t.start()
+        if sync:
+            _send()
+        else:
+            t = threading.Thread(target=_send, daemon=False)
+            t.start()
 
     def start_run(self, pipeline_name: str, total_steps: int) -> str:
         """Insert a new run record. Returns the generated run_id."""
@@ -143,7 +146,7 @@ class RunStore:
             "started_at": started_at,
             "total_steps": total_steps,
             "status": "running",
-        })
+        }, sync=True)  # blocking — run must exist before steps are sent
         return run_id
 
     def save_step(
