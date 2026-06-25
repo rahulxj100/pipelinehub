@@ -60,7 +60,7 @@ class DataProfiler:
 
         with suppress(ImportError):
             import polars as pl
-            if isinstance(data, pl.DataFrame):
+            if isinstance(data, (pl.DataFrame, pl.LazyFrame)):
                 return "dataframe"
 
         with suppress(ImportError):
@@ -85,6 +85,8 @@ class DataProfiler:
 
         with suppress(ImportError):
             import polars as pl
+            if isinstance(df, pl.LazyFrame):
+                return self._profile_polars(df.collect())
             if isinstance(df, pl.DataFrame):
                 return self._profile_polars(df)
 
@@ -136,11 +138,12 @@ class DataProfiler:
         for col in numeric_cols:
             s = sample[col].drop_nulls()
             if len(s) > 0:
+                mean_v, std_v, min_v, max_v = s.mean(), s.std(), s.min(), s.max()
                 numeric_stats[col] = {
-                    "mean": float(s.mean()),
-                    "std": float(s.std()),
-                    "min": float(s.min()),
-                    "max": float(s.max()),
+                    "mean": float(mean_v) if mean_v is not None else None,
+                    "std": float(std_v) if std_v is not None else None,
+                    "min": float(min_v) if min_v is not None else None,
+                    "max": float(max_v) if max_v is not None else None,
                 }
 
         schema_str = str(sorted((c, str(df[c].dtype)) for c in columns))
