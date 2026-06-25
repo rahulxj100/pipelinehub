@@ -37,12 +37,11 @@ class TestDataPipeline:
         with pytest.raises(ValueError):
             pipeline.execute()
 
-    def test_method_chaining(self):
-        result = (DataPipeline(db_path=":memory:")
-                 .add_step(lambda x: [i * 2 for i in x])
-                 .add_step(lambda x: [i + 1 for i in x])
-                 .execute([1, 2, 3]))
-        assert result == [3, 5, 7]
+    def test_add_step_returns_func(self):
+        pipeline = DataPipeline(db_path=":memory:")
+        double = lambda x: [i * 2 for i in x]
+        returned = pipeline.add_step(double)
+        assert returned is double
 
     def test_clear_steps(self):
         pipeline = DataPipeline(db_path=":memory:")

@@ -127,12 +127,13 @@ class TestPolarsEndToEnd:
         assert result.shape == (1, 3)
 
     def test_pipeline_with_lazyframe(self):
+        # LazyFrame is auto-collected between steps — result is a DataFrame
         pipeline = DataPipeline(name="polars-lazy-e2e", db_path=":memory:")
         pipeline.add_step(lambda lf: lf.filter(pl.col("value") > 10), "filter")
         lf = pl.DataFrame({"id": [1, 2, 3], "value": [5.0, 15.0, 25.0]}).lazy()
         result = pipeline.execute(lf)
-        assert isinstance(result, pl.LazyFrame)
-        assert result.collect().shape[0] == 2
+        assert isinstance(result, pl.DataFrame)
+        assert result.shape[0] == 2
 
     def test_anomaly_detected_on_row_drop(self):
         # Row-drop detection compares step N output vs step N-1 output.

@@ -54,7 +54,7 @@ class DataPipeline:
         self._profiler = DataProfiler()
         self._store = RunStore(db_path=db_path, api_key=api_key, api_url=api_url)
 
-    def add_step(self, func: Callable, name: Optional[str] = None) -> "DataPipeline":
+    def add_step(self, func: Callable, name: Optional[str] = None) -> Callable:
         """
         Add a processing step to the pipeline.
 
@@ -63,7 +63,7 @@ class DataPipeline:
             name: Optional step name for display and replay.
 
         Returns:
-            self (for method chaining)
+            func (enables use as a decorator: @pipeline.add_step)
 
         Raises:
             ValueError: If func is not callable.
@@ -72,7 +72,7 @@ class DataPipeline:
             raise ValueError("Step must be a callable function")
         self.steps.append(func)
         self.step_names.append(name or getattr(func, "__name__", f"step_{len(self.steps)}"))
-        return self
+        return func
 
     def set_data(self, data: Any) -> "DataPipeline":
         """
@@ -151,6 +151,9 @@ class DataPipeline:
 
             try:
                 result = step(current_data)
+                if hasattr(result, "collect") and callable(result.collect):
+                    with suppress(Exception):
+                        result = result.collect()
             except Exception as e:
                 with suppress(Exception):
                     self._store.save_failure(run_id, step_name, i, snap_before, e)
