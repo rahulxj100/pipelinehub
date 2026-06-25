@@ -51,8 +51,8 @@ class TestDataPipeline:
 
     def test_remove_step(self):
         pipeline = DataPipeline(db_path=":memory:")
-        pipeline.add_step(lambda x: x, "step1")
-        pipeline.add_step(lambda x: x, "step2")
+        pipeline.add_step(lambda x: x, name="step1")
+        pipeline.add_step(lambda x: x, name="step2")
         pipeline.remove_step(0)
         assert len(pipeline) == 1
         assert pipeline.get_steps() == ["step2"]
