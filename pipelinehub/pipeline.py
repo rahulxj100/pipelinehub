@@ -54,25 +54,31 @@ class DataPipeline:
         self._profiler = DataProfiler()
         self._store = RunStore(db_path=db_path, api_key=api_key, api_url=api_url)
 
-    def add_step(self, func: Callable, name: Optional[str] = None) -> Callable:
+    def add_step(self, func: Optional[Callable] = None, *, name: Optional[str] = None) -> Callable:
         """
-        Add a processing step to the pipeline.
+        Register a pipeline step.
 
-        Args:
-            func: A callable that takes data and returns transformed data.
-            name: Optional step name for display and replay.
+        Supports three call forms:
+          @pipeline.add_step                      bare decorator
+          @pipeline.add_step(name="my-step")     parameterized decorator
+          pipeline.add_step(fn, name="my-step")  explicit call
 
         Returns:
-            func (enables use as a decorator: @pipeline.add_step)
+            func in all cases — preserves the function reference.
 
         Raises:
             ValueError: If func is not callable.
         """
-        if not callable(func):
-            raise ValueError("Step must be a callable function")
-        self.steps.append(func)
-        self.step_names.append(name or getattr(func, "__name__", f"step_{len(self.steps)}"))
-        return func
+        def _register(fn: Callable) -> Callable:
+            if not callable(fn):
+                raise ValueError("Step must be a callable function")
+            self.steps.append(fn)
+            self.step_names.append(name or getattr(fn, "__name__", f"step_{len(self.steps)}"))
+            return fn
+
+        if func is not None:
+            return _register(func)
+        return _register
 
     def set_data(self, data: Any) -> "DataPipeline":
         """

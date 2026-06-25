@@ -116,10 +116,10 @@ class TestPolarsEndToEnd:
 
     def test_pipeline_with_polars_dataframe(self):
         pipeline = DataPipeline(name="polars-e2e", db_path=":memory:")
-        pipeline.add_step(lambda df: df.drop_nulls(), "clean")
+        pipeline.add_step(lambda df: df.drop_nulls(), name="clean")
         pipeline.add_step(
             lambda df: df.with_columns((pl.col("value") * 2).alias("doubled")),
-            "transform",
+            name="transform",
         )
         df = pl.DataFrame({"id": [1, 2, None], "value": [10.0, None, 30.0]})
         result = pipeline.execute(df)
@@ -129,7 +129,7 @@ class TestPolarsEndToEnd:
     def test_pipeline_with_lazyframe(self):
         # LazyFrame is auto-collected between steps — result is a DataFrame
         pipeline = DataPipeline(name="polars-lazy-e2e", db_path=":memory:")
-        pipeline.add_step(lambda lf: lf.filter(pl.col("value") > 10), "filter")
+        pipeline.add_step(lambda lf: lf.filter(pl.col("value") > 10), name="filter")
         lf = pl.DataFrame({"id": [1, 2, 3], "value": [5.0, 15.0, 25.0]}).lazy()
         result = pipeline.execute(lf)
         assert isinstance(result, pl.DataFrame)
@@ -139,8 +139,8 @@ class TestPolarsEndToEnd:
         # Row-drop detection compares step N output vs step N-1 output.
         # Need 2 steps: passthrough produces 10 rows, clean drops to 1 → >50% → anomaly.
         pipeline = DataPipeline(name="polars-anomaly", db_path=":memory:")
-        pipeline.add_step(lambda df: df, "passthrough")
-        pipeline.add_step(lambda df: df.drop_nulls(), "clean")
+        pipeline.add_step(lambda df: df, name="passthrough")
+        pipeline.add_step(lambda df: df.drop_nulls(), name="clean")
 
         df = pl.DataFrame({"v": [1.0, None, None, None, None, None, None, None, None, None]})
         import io, sys
