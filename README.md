@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyPI version](https://img.shields.io/pypi/v/pipelinehub.svg)](https://pypi.org/project/pipelinehub/)
-[![Downloads](https://img.shields.io/pypi/dm/pipelinehub.svg)](https://pypi.org/project/pipelinehub/)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/pipelinehub?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/pipelinehub)
 [![CI](https://github.com/rahulxj100/pipelinehub/actions/workflows/ci.yml/badge.svg)](https://github.com/rahulxj100/pipelinehub/actions/workflows/ci.yml)
 
 **Python pipelines with automatic debugging built in.**
