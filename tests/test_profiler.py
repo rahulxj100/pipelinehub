@@ -216,3 +216,82 @@ class TestProfileDataframePandas:
         h1 = p._profile_dataframe(df1)["schema_hash"]
         h2 = p._profile_dataframe(df2)["schema_hash"]
         assert h1 != h2
+
+    def test_percentiles_in_numeric_stats(self):
+        pytest.importorskip("pandas")
+        import pandas as pd
+        p = DataProfiler()
+        df = pd.DataFrame({"val": [1.0, 2.0, 3.0, 4.0, 5.0]})
+        stats = p._profile_dataframe(df)["numeric_stats"]["val"]
+        assert "p25" in stats
+        assert "p50" in stats
+        assert "p75" in stats
+        assert stats["p25"] == 2.0
+        assert stats["p50"] == 3.0
+        assert stats["p75"] == 4.0
+
+    def test_cardinality_per_column(self):
+        pytest.importorskip("pandas")
+        import pandas as pd
+        p = DataProfiler()
+        df = pd.DataFrame({"a": [1, 1, 2, 3], "b": ["x", "x", "x", "y"]})
+        result = p._profile_dataframe(df)
+        assert "cardinality" in result
+        assert result["cardinality"]["a"] == 3
+        assert result["cardinality"]["b"] == 2
+
+    def test_correlation_matrix_numeric_columns(self):
+        pytest.importorskip("pandas")
+        import pandas as pd
+        p = DataProfiler()
+        df = pd.DataFrame({"a": [1.0, 2.0, 3.0], "b": [2.0, 4.0, 6.0], "c": ["x", "y", "z"]})
+        result = p._profile_dataframe(df)
+        assert "correlation" in result
+        corr = result["correlation"]
+        assert "a" in corr
+        assert "b" in corr
+        assert "c" not in corr
+        assert abs(corr["a"]["b"] - 1.0) < 0.01
+
+    def test_correlation_skipped_single_numeric_column(self):
+        pytest.importorskip("pandas")
+        import pandas as pd
+        p = DataProfiler()
+        df = pd.DataFrame({"a": [1.0, 2.0, 3.0], "b": ["x", "y", "z"]})
+        result = p._profile_dataframe(df)
+        assert result["correlation"] is None
+
+
+class TestProfilerArrayPercentiles:
+
+    def test_percentiles_in_array_stats(self):
+        pytest.importorskip("numpy")
+        import numpy as np
+        p = DataProfiler()
+        arr = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        result = p._profile_array(arr)
+        assert "p25" in result
+        assert "p50" in result
+        assert "p75" in result
+        assert result["p25"] == 2.0
+        assert result["p50"] == 3.0
+        assert result["p75"] == 4.0
+
+
+class TestProfilerSequencePercentiles:
+
+    def test_percentiles_in_numeric_sequence(self):
+        p = DataProfiler()
+        result = p._profile_sequence([1.0, 2.0, 3.0, 4.0, 5.0])
+        stats = result["numeric_stats"]
+        assert "p25" in stats
+        assert "p50" in stats
+        assert "p75" in stats
+        assert stats["p25"] == 2.0
+        assert stats["p50"] == 3.0
+        assert stats["p75"] == 4.0
+
+    def test_no_percentiles_for_non_numeric_sequence(self):
+        p = DataProfiler()
+        result = p._profile_sequence(["a", "b", "c"])
+        assert result["numeric_stats"] is None
