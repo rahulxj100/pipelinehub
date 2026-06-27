@@ -42,6 +42,15 @@ CREATE TABLE IF NOT EXISTS failures (
     exception_message TEXT,
     FOREIGN KEY (run_id) REFERENCES runs(run_id)
 );
+
+CREATE TABLE IF NOT EXISTS pending_sync (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    method TEXT NOT NULL,
+    path TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    attempts INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -54,14 +63,6 @@ class RunStore:
         api_key: Optional[str] = None,
         api_url: str = "https://api.pipelinehub.cloud",
     ) -> None:
-        """
-        Create directory if needed, connect to SQLite, create tables.
-
-        Args:
-            db_path: Path to the SQLite database file, or ":memory:" for in-memory.
-            api_key: Optional API key for cloud sync. Falls back to PIPELINEHUB_API_KEY env var.
-            api_url: Base URL for cloud API. Defaults to https://api.pipelinehub.cloud.
-        """
         self._db_path = db_path if db_path == ":memory:" else os.path.abspath(db_path)
         self._persist_conn: Optional[sqlite3.Connection] = None
         self._api_key = api_key or os.environ.get("PIPELINEHUB_API_KEY")
@@ -76,7 +77,6 @@ class RunStore:
 
     @contextmanager
     def _get_conn(self) -> Generator[sqlite3.Connection, None, None]:
-        """Context manager: yields a connection, commits on exit, closes if file-based."""
         if self._persist_conn is not None:
             try:
                 yield self._persist_conn
@@ -102,37 +102,86 @@ class RunStore:
         with self._get_conn() as conn:
             conn.executescript(_SCHEMA)
 
-    def _cloud_post(self, path: str, payload: dict, method: str = "POST", sync: bool = False) -> None:
-        """Post data to cloud API. sync=True blocks until complete (used for start_run)."""
+    def _do_send(self, method: str, path: str, payload: dict) -> bool:
+        """Attempt a single HTTP send. Returns True on success."""
+        try:
+            url = self._api_url + path
+            data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                url,
+                data=data,
+                method=method,
+                headers={
+                    "Authorization": "Bearer " + self._api_key,
+                    "Content-Type": "application/json",
+                },
+            )
+            urllib.request.urlopen(req, timeout=10)
+            return True
+        except Exception:
+            return False
+
+    def _save_to_buffer(self, method: str, path: str, payload: dict) -> None:
+        try:
+            with self._get_conn() as conn:
+                conn.execute(
+                    "INSERT INTO pending_sync (method, path, payload, created_at) VALUES (?, ?, ?, ?)",
+                    (method, path, json.dumps(payload), datetime.datetime.utcnow().isoformat()),
+                )
+        except Exception:
+            pass
+
+    def _send_or_buffer(self, method: str, path: str, payload: dict, sync: bool = False) -> None:
+        """Send to cloud; if fails, save to pending_sync for later retry."""
         if not self._api_key:
             return
-        api_key = self._api_key
-        url = self._api_url + path
-        data = json.dumps(payload).encode("utf-8")
 
-        def _send():
+        if sync:
+            if not self._do_send(method, path, payload):
+                self._save_to_buffer(method, path, payload)
+        else:
+            def _try():
+                if not self._do_send(method, path, payload):
+                    self._save_to_buffer(method, path, payload)
+
+            t = threading.Thread(target=_try, daemon=False)
+            t.start()
+
+    def _flush_buffer(self) -> None:
+        """Retry buffered requests that failed earlier. Called at run start."""
+        if not self._api_key:
+            return
+
+        def _flush():
             try:
-                req = urllib.request.Request(
-                    url,
-                    data=data,
-                    method=method,
-                    headers={
-                        "Authorization": "Bearer " + api_key,
-                        "Content-Type": "application/json",
-                    },
-                )
-                urllib.request.urlopen(req, timeout=10)
+                with self._get_conn() as conn:
+                    rows = conn.execute(
+                        "SELECT id, method, path, payload, attempts FROM pending_sync "
+                        "WHERE attempts < 5 ORDER BY id LIMIT 50"
+                    ).fetchall()
+                for row_id, method, path, payload_str, attempts in rows:
+                    try:
+                        payload = json.loads(payload_str)
+                        if self._do_send(method, path, payload):
+                            with self._get_conn() as conn:
+                                conn.execute("DELETE FROM pending_sync WHERE id = ?", (row_id,))
+                        else:
+                            with self._get_conn() as conn:
+                                conn.execute(
+                                    "UPDATE pending_sync SET attempts = attempts + 1 WHERE id = ?",
+                                    (row_id,),
+                                )
+                    except Exception:
+                        pass
             except Exception:
                 pass
 
-        if sync:
-            _send()
-        else:
-            t = threading.Thread(target=_send, daemon=False)
-            t.start()
+        t = threading.Thread(target=_flush, daemon=True)
+        t.start()
 
     def start_run(self, pipeline_name: str, total_steps: int) -> str:
         """Insert a new run record. Returns the generated run_id."""
+        self._flush_buffer()
         run_id = str(uuid.uuid4())
         started_at = datetime.datetime.utcnow().isoformat()
         with self._get_conn() as conn:
@@ -140,13 +189,13 @@ class RunStore:
                 "INSERT INTO runs (run_id, pipeline_name, started_at, status, total_steps) VALUES (?, ?, ?, ?, ?)",
                 (run_id, pipeline_name, started_at, "running", total_steps),
             )
-        self._cloud_post("/v1/runs", {
+        self._send_or_buffer("POST", "/v1/runs", {
             "run_id": run_id,
             "pipeline_name": pipeline_name,
             "started_at": started_at,
             "total_steps": total_steps,
             "status": "running",
-        }, sync=True)  # blocking — run must exist before steps are sent
+        }, sync=True)
         return run_id
 
     def save_step(
@@ -164,7 +213,7 @@ class RunStore:
                 "INSERT INTO step_snapshots (run_id, step_name, step_index, snapshot_before, snapshot_after, duration_seconds) VALUES (?, ?, ?, ?, ?, ?)",
                 (run_id, step_name, step_index, json.dumps(snapshot_before), json.dumps(snapshot_after), duration_seconds),
             )
-        self._cloud_post(f"/v1/runs/{run_id}/steps", {
+        self._send_or_buffer("POST", f"/v1/runs/{run_id}/steps", {
             "run_id": run_id,
             "step_name": step_name,
             "step_index": step_index,
@@ -187,7 +236,7 @@ class RunStore:
                 "INSERT INTO failures (run_id, step_name, step_index, snapshot_before, exception_type, exception_message) VALUES (?, ?, ?, ?, ?, ?)",
                 (run_id, step_name, step_index, json.dumps(snapshot_before), type(exception).__name__, str(exception)),
             )
-        self._cloud_post(f"/v1/runs/{run_id}/failure", {
+        self._send_or_buffer("POST", f"/v1/runs/{run_id}/failure", {
             "run_id": run_id,
             "step_name": step_name,
             "step_index": step_index,
@@ -203,10 +252,10 @@ class RunStore:
                 "UPDATE runs SET status = ?, finished_at = ? WHERE run_id = ?",
                 (status, finished_at, run_id),
             )
-        self._cloud_post(f"/v1/runs/{run_id}", {
+        self._send_or_buffer("PATCH", f"/v1/runs/{run_id}", {
             "status": status,
             "finished_at": finished_at,
-        }, method="PATCH")
+        })
 
     def get_last_run(self, pipeline_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Return the most recent run with all step snapshots. None if no runs exist."""
