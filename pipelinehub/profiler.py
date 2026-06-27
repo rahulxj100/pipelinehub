@@ -105,12 +105,26 @@ class DataProfiler:
         for col in numeric_cols:
             s = sample[col].dropna()
             if len(s) > 0:
+                q = s.quantile([0.25, 0.5, 0.75])
                 numeric_stats[col] = {
                     "mean": float(s.mean()),
                     "std": float(s.std()),
                     "min": float(s.min()),
                     "max": float(s.max()),
+                    "p25": float(q[0.25]),
+                    "p50": float(q[0.50]),
+                    "p75": float(q[0.75]),
                 }
+
+        cardinality = {col: int(df[col].nunique()) for col in columns}
+
+        correlation = None
+        if len(numeric_cols) >= 2:
+            corr_df = df[numeric_cols].corr()
+            correlation = {
+                c: {r: float(corr_df.loc[c, r]) for r in numeric_cols}
+                for c in numeric_cols
+            }
 
         schema_str = str(sorted((c, str(df[c].dtype)) for c in columns))
         schema_hash = hashlib.md5(schema_str.encode()).hexdigest()
@@ -122,6 +136,8 @@ class DataProfiler:
             "dtypes": dtypes,
             "null_counts": null_counts,
             "numeric_stats": numeric_stats,
+            "cardinality": cardinality,
+            "correlation": correlation,
             "schema_hash": schema_hash,
         }
 
@@ -139,12 +155,31 @@ class DataProfiler:
             s = sample[col].drop_nulls()
             if len(s) > 0:
                 mean_v, std_v, min_v, max_v = s.mean(), s.std(), s.min(), s.max()
+                p25_v = s.quantile(0.25, interpolation="linear")
+                p50_v = s.quantile(0.50, interpolation="linear")
+                p75_v = s.quantile(0.75, interpolation="linear")
                 numeric_stats[col] = {
                     "mean": float(mean_v) if mean_v is not None else None,
                     "std": float(std_v) if std_v is not None else None,
                     "min": float(min_v) if min_v is not None else None,
                     "max": float(max_v) if max_v is not None else None,
+                    "p25": float(p25_v) if p25_v is not None else None,
+                    "p50": float(p50_v) if p50_v is not None else None,
+                    "p75": float(p75_v) if p75_v is not None else None,
                 }
+
+        cardinality = {col: int(df[col].n_unique()) for col in columns}
+
+        correlation = None
+        if len(numeric_cols) >= 2:
+            import polars as pl
+            correlation = {
+                c: {
+                    r: float(df.select(pl.corr(c, r)).item())
+                    for r in numeric_cols
+                }
+                for c in numeric_cols
+            }
 
         schema_str = str(sorted((c, str(df[c].dtype)) for c in columns))
         schema_hash = hashlib.md5(schema_str.encode()).hexdigest()
@@ -156,6 +191,8 @@ class DataProfiler:
             "dtypes": dtypes,
             "null_counts": null_counts,
             "numeric_stats": numeric_stats,
+            "cardinality": cardinality,
+            "correlation": correlation,
             "schema_hash": schema_hash,
         }
 
@@ -169,6 +206,11 @@ class DataProfiler:
         valid = sample[~np.isnan(sample)] if is_float else sample
         null_count = int(np.sum(np.isnan(arr))) if is_float else 0
 
+        p25, p50, p75 = (
+            (float(np.percentile(valid, 25)), float(np.percentile(valid, 50)), float(np.percentile(valid, 75)))
+            if len(valid) > 0 else (None, None, None)
+        )
+
         return {
             "shape": list(arr.shape),
             "dtype": str(arr.dtype),
@@ -176,6 +218,9 @@ class DataProfiler:
             "std": float(np.std(valid)) if len(valid) > 0 else None,
             "min": float(np.min(valid)) if len(valid) > 0 else None,
             "max": float(np.max(valid)) if len(valid) > 0 else None,
+            "p25": p25,
+            "p50": p50,
+            "p75": p75,
             "null_count": null_count,
         }
 
@@ -196,11 +241,22 @@ class DataProfiler:
         if length > 0 and all(isinstance(x, (int, float)) for x in data):
             mean = sum(data) / length
             variance = sum((x - mean) ** 2 for x in data) / length
+            sorted_data = sorted(data)
+
+            def _pct(pval):
+                k = (length - 1) * pval
+                f = int(k)
+                c = min(f + 1, length - 1)
+                return sorted_data[f] + (k - f) * (sorted_data[c] - sorted_data[f])
+
             numeric_stats = {
                 "mean": mean,
                 "std": variance ** 0.5,
                 "min": min(data),
                 "max": max(data),
+                "p25": _pct(0.25),
+                "p50": _pct(0.50),
+                "p75": _pct(0.75),
             }
 
         return {
