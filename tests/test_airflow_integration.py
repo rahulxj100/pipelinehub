@@ -91,3 +91,59 @@ class TestOnSuccessEdgeCases:
         ph.on_success(context)
         run = ph._store.get_last_run("pipe")
         assert run["steps"][0]["duration_seconds"] == 0.0
+
+
+def make_failure_context(exception=None, dag_id="my_dag", task_id="transform"):
+    ti = MockTI(task_id=task_id, dag_id=dag_id, duration=None, xcom_value=None)
+    exc = exception if exception is not None else ValueError("bad data")
+    return {"task_instance": ti, "exception": exc}
+
+
+class TestOnFailure:
+    def test_saves_run_with_failed_status(self):
+        context = make_failure_context()
+        ph = PipelinehubCallback(pipeline_name="pipe", db_path=":memory:")
+        ph.on_failure(context)
+        runs = ph._store.list_runs(pipeline_name="pipe")
+        assert len(runs) == 1
+        assert runs[0]["status"] == "failed"
+
+    def test_step_name_matches_task_id(self):
+        context = make_failure_context(task_id="my_transform")
+        ph = PipelinehubCallback(pipeline_name="pipe", db_path=":memory:")
+        ph.on_failure(context)
+        with ph._store._get_conn() as conn:
+            row = conn.execute("SELECT step_name FROM failures").fetchone()
+        assert row[0] == "my_transform"
+
+    def test_exception_type_and_message_saved(self):
+        exc = TypeError("unexpected column type")
+        context = make_failure_context(exception=exc)
+        ph = PipelinehubCallback(pipeline_name="pipe", db_path=":memory:")
+        ph.on_failure(context)
+        with ph._store._get_conn() as conn:
+            row = conn.execute(
+                "SELECT exception_type, exception_message FROM failures"
+            ).fetchone()
+        assert row[0] == "TypeError"
+        assert "unexpected column type" in row[1]
+
+    def test_pipeline_name_falls_back_to_dag_id_on_failure(self):
+        context = make_failure_context(dag_id="etl_dag")
+        ph = PipelinehubCallback(db_path=":memory:")
+        ph.on_failure(context)
+        runs = ph._store.list_runs(pipeline_name="etl_dag")
+        assert len(runs) == 1
+        assert runs[0]["status"] == "failed"
+
+    def test_string_exception_wrapped_as_runtime_error(self):
+        ti = MockTI()
+        context = {"task_instance": ti, "exception": "something went wrong"}
+        ph = PipelinehubCallback(pipeline_name="pipe", db_path=":memory:")
+        ph.on_failure(context)
+        with ph._store._get_conn() as conn:
+            row = conn.execute(
+                "SELECT exception_type, exception_message FROM failures"
+            ).fetchone()
+        assert row[0] == "RuntimeError"
+        assert "something went wrong" in row[1]
