@@ -44,8 +44,12 @@ class PipelineStepError(RuntimeError):
                 lines.append(f"  dtypes:  {dtype_str}")
         elif dtype == "sequence":
             length = profile.get("length", "?")
+            element_type = profile.get("element_type", "?")
             lines.append(f"  type:    sequence")
             lines.append(f"  length:  {length}")
+            lines.append(f"  element_type: {element_type}")
+            if element_type == "mixed":
+                lines.append(f"  mixed_types: True")
         elif dtype == "array":
             shape = profile.get("shape", "?")
             lines.append(f"  type:    array")
