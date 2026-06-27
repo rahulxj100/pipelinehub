@@ -91,7 +91,74 @@ class AgentPipeline:
         current_steps: List[Dict[str, Any]],
         last_steps: List[Dict[str, Any]],
     ) -> List[str]:
-        return []  # anomaly logic added in Task 2
+        anomalies: List[str] = []
+
+        def _last_snap(step: Dict[str, Any]) -> Dict[str, Any]:
+            return step.get("snapshot_after") or {}
+
+        # token_spike, latency_regression, tool_call_drift, tool_call_order_change
+        # — only compare when there is prior history
+        if last_steps:
+            current_tokens = sum(
+                s.get("prompt_tokens", 0) + s.get("completion_tokens", 0)
+                for s in current_steps
+                if s.get("step_type") == "llm_call"
+            )
+            last_tokens = sum(
+                _last_snap(s).get("prompt_tokens", 0) + _last_snap(s).get("completion_tokens", 0)
+                for s in last_steps
+                if _last_snap(s).get("step_type") == "llm_call"
+            )
+            if last_tokens > 0 and current_tokens > 2 * last_tokens:
+                anomalies.append(
+                    "⚠  token_spike: {} tokens vs"
+                    " {} last run (>2x)".format(current_tokens, last_tokens)
+                )
+
+            # latency_regression
+            current_dur = sum(s.get("duration", 0.0) for s in current_steps)
+            last_dur = sum(_last_snap(s).get("duration", 0.0) for s in last_steps)
+            if last_dur > 0 and current_dur > 3 * last_dur:
+                anomalies.append(
+                    "⚠  latency_regression: {:.1f}s vs"
+                    " {:.1f}s last run (>3x)".format(current_dur, last_dur)
+                )
+
+            # tool_call_drift / tool_call_order_change
+            current_tools = [
+                s["tool_name"]
+                for s in current_steps
+                if s.get("step_type") == "tool_call" and "tool_name" in s
+            ]
+            last_tools = [
+                _last_snap(s)["tool_name"]
+                for s in last_steps
+                if _last_snap(s).get("step_type") == "tool_call"
+                and "tool_name" in _last_snap(s)
+            ]
+            if last_tools:
+                if set(current_tools) != set(last_tools):
+                    added = sorted(set(current_tools) - set(last_tools))
+                    removed = sorted(set(last_tools) - set(current_tools))
+                    anomalies.append(
+                        "⚠  tool_call_drift: added={}"
+                        " removed={} vs last run".format(added, removed)
+                    )
+                elif current_tools != last_tools:
+                    anomalies.append(
+                        "⚠  tool_call_order_change: same tools,"
+                        " different sequence vs last run"
+                    )
+
+        # error_rate_spike — always checked, no prior run needed
+        total = len(current_steps) + self._error_count
+        if total > 0 and self._error_count / total > 0.20:
+            anomalies.append(
+                "⚠  error_rate_spike: {}/{}"
+                " steps errored (>20%)".format(self._error_count, total)
+            )
+
+        return anomalies
 
     def _print_completion(
         self, steps: List[Dict[str, Any]], anomalies: List[str]

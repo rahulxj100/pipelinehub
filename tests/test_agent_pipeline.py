@@ -75,3 +75,87 @@ class TestAgentPipelineLifecycle:
         assert run["steps"][0]["snapshot_after"]["step_type"] == "llm_call"
         assert run["steps"][1]["snapshot_after"]["step_type"] == "tool_call"
         assert run["steps"][2]["snapshot_after"]["step_type"] == "llm_call"
+
+
+class TestAnomalyDetection:
+
+    def _make_llm_step(self, prompt=100, completion=50, duration=1.0, tool_name=None):
+        return {"step_type": "llm_call", "prompt_tokens": prompt,
+                "completion_tokens": completion, "duration": duration}
+
+    def _make_tool_step(self, name="search", duration=0.5):
+        return {"step_type": "tool_call", "tool_name": name, "duration": duration}
+
+    def _last_step_row(self, snap: dict) -> dict:
+        """Wrap a snap dict in the shape RunStore._hydrate_run produces."""
+        return {"snapshot_after": snap, "snapshot_before": {}}
+
+    def test_no_anomaly_with_no_history(self, pipeline):
+        current = [self._make_llm_step(100, 50, 1.0)]
+        result = pipeline._detect_run_anomalies(current, [])
+        assert result == []
+
+    def test_token_spike_triggers(self, pipeline):
+        last = [self._last_step_row(self._make_llm_step(100, 50))]
+        current = [self._make_llm_step(500, 200)]  # 700 tokens vs 150 last — >2x
+        anomalies = pipeline._detect_run_anomalies(current, last)
+        assert any("token_spike" in a for a in anomalies)
+
+    def test_token_spike_not_triggered_below_threshold(self, pipeline):
+        last = [self._last_step_row(self._make_llm_step(100, 50))]
+        current = [self._make_llm_step(150, 75)]  # 225 vs 150 — <2x
+        anomalies = pipeline._detect_run_anomalies(current, last)
+        assert not any("token_spike" in a for a in anomalies)
+
+    def test_latency_regression_triggers(self, pipeline):
+        last = [self._last_step_row({"step_type": "llm_call", "duration": 1.0})]
+        current = [{"step_type": "llm_call", "duration": 4.0}]  # 4x — >3x threshold
+        anomalies = pipeline._detect_run_anomalies(current, last)
+        assert any("latency_regression" in a for a in anomalies)
+
+    def test_latency_regression_not_triggered_below_threshold(self, pipeline):
+        last = [self._last_step_row({"step_type": "llm_call", "duration": 1.0})]
+        current = [{"step_type": "llm_call", "duration": 2.5}]  # 2.5x — <3x
+        anomalies = pipeline._detect_run_anomalies(current, last)
+        assert not any("latency_regression" in a for a in anomalies)
+
+    def test_tool_call_drift_triggers_new_tool(self, pipeline):
+        last = [self._last_step_row(self._make_tool_step("search"))]
+        current = [self._make_tool_step("calculator")]  # different tool
+        anomalies = pipeline._detect_run_anomalies(current, last)
+        assert any("tool_call_drift" in a for a in anomalies)
+
+    def test_tool_call_drift_triggers_missing_tool(self, pipeline):
+        last = [
+            self._last_step_row(self._make_tool_step("search")),
+            self._last_step_row(self._make_tool_step("calculator")),
+        ]
+        current = [self._make_tool_step("search")]  # calculator missing
+        anomalies = pipeline._detect_run_anomalies(current, last)
+        assert any("tool_call_drift" in a for a in anomalies)
+
+    def test_tool_call_order_change_triggers(self, pipeline):
+        last = [
+            self._last_step_row(self._make_tool_step("search")),
+            self._last_step_row(self._make_tool_step("calculator")),
+        ]
+        current = [self._make_tool_step("calculator"), self._make_tool_step("search")]
+        anomalies = pipeline._detect_run_anomalies(current, last)
+        assert any("tool_call_order_change" in a for a in anomalies)
+
+    def test_error_rate_spike_triggers(self, pipeline):
+        pipeline.start()
+        pipeline.record_step("llm_call", model="gpt-4o", duration=0.5)
+        pipeline._error_count = 4  # simulate 4 errors (1 step + 4 errors = 80% > 20%)
+        anomalies = pipeline._detect_run_anomalies(pipeline._current_run_steps, [])
+        assert any("error_rate_spike" in a for a in anomalies)
+        pipeline.end()
+
+    def test_no_anomaly_same_run(self, pipeline):
+        last = [
+            self._last_step_row(self._make_llm_step(100, 50, 1.0)),
+            self._last_step_row(self._make_tool_step("search", 0.5)),
+        ]
+        current = [self._make_llm_step(105, 52, 1.1), self._make_tool_step("search", 0.6)]
+        anomalies = pipeline._detect_run_anomalies(current, last)
+        assert anomalies == []
