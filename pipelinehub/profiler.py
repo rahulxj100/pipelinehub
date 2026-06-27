@@ -105,7 +105,8 @@ class DataProfiler:
         else:
             sample = df
         numeric_cols = [
-            c for c in columns if pd.api.types.is_numeric_dtype(df[c])
+            c for c in columns
+            if pd.api.types.is_numeric_dtype(df[c]) and not pd.api.types.is_bool_dtype(df[c])
         ]
         numeric_stats: Dict[str, Any] = {}
         for col in numeric_cols:
