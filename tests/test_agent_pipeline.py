@@ -79,7 +79,7 @@ class TestAgentPipelineLifecycle:
 
 class TestAnomalyDetection:
 
-    def _make_llm_step(self, prompt=100, completion=50, duration=1.0, tool_name=None):
+    def _make_llm_step(self, prompt=100, completion=50, duration=1.0):
         return {"step_type": "llm_call", "prompt_tokens": prompt,
                 "completion_tokens": completion, "duration": duration}
 
@@ -149,6 +149,15 @@ class TestAnomalyDetection:
         pipeline._error_count = 4  # simulate 4 errors (1 step + 4 errors = 80% > 20%)
         anomalies = pipeline._detect_run_anomalies(pipeline._current_run_steps, [])
         assert any("error_rate_spike" in a for a in anomalies)
+        pipeline.end()
+
+    def test_error_rate_spike_not_triggered_below_threshold(self, pipeline):
+        pipeline.start()
+        for _ in range(4):
+            pipeline.record_step("llm_call", model="gpt-4o", duration=0.5)
+        pipeline._error_count = 1  # 1 error / (4 steps + 1 error) = 20% — not >20%
+        anomalies = pipeline._detect_run_anomalies(pipeline._current_run_steps, [])
+        assert not any("error_rate_spike" in a for a in anomalies)
         pipeline.end()
 
     def test_no_anomaly_same_run(self, pipeline):
