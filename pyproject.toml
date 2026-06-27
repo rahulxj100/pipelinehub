@@ -33,6 +33,7 @@ dependencies = []
 ph = "pipelinehub.cli:main"
 
 [project.optional-dependencies]
+airflow = ["apache-airflow>=2.0"]
 dev = ["pytest>=6.0", "black", "flake8", "mypy"]
 
 [project.urls]
