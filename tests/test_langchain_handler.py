@@ -141,9 +141,9 @@ class TestHandlerChain:
         run_id = uuid.uuid4()
         cb.on_chain_start({"name": "Chain"}, {}, run_id=run_id)
         cb.on_chain_error(RuntimeError("boom"), run_id=run_id)
-        run = pipeline._store.get_last_run("test-agent")
-        assert run is not None
-        assert run["status"] == "failed"
+        runs = pipeline._store.list_runs(pipeline_name="test-agent")
+        assert len(runs) == 1
+        assert runs[0]["status"] == "failed"
 
     def test_handler_reusable_across_invocations(self, handler):
         cb, pipeline = handler

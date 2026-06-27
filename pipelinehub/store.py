@@ -216,11 +216,11 @@ class RunStore:
             try:
                 if pipeline_name:
                     row = conn.execute(
-                        "SELECT * FROM runs WHERE pipeline_name = ? ORDER BY started_at DESC LIMIT 1",
+                        "SELECT * FROM runs WHERE pipeline_name = ? AND status = 'success' ORDER BY started_at DESC LIMIT 1",
                         (pipeline_name,),
                     ).fetchone()
                 else:
-                    row = conn.execute("SELECT * FROM runs ORDER BY started_at DESC LIMIT 1").fetchone()
+                    row = conn.execute("SELECT * FROM runs WHERE status = 'success' ORDER BY started_at DESC LIMIT 1").fetchone()
                 if row is None:
                     return None
                 return self._hydrate_run(conn, dict(row))
