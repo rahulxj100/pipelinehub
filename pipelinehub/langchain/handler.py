@@ -146,7 +146,7 @@ class PipelineHubCallbackHandler(BaseCallbackHandler):
             self.pipeline.start()
         self._run_map[run_id_str] = {
             "type": "chain",
-            "chain_type": serialized.get("name", "unknown"),
+            "chain_type": (serialized or {}).get("name", "unknown"),
             "start": time.time(),
         }
 
