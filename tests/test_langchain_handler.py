@@ -75,6 +75,7 @@ class TestHandlerLLM:
         result.llm_output = None  # some providers return None
         gen = MagicMock()
         gen.text = "answer"
+        gen.generation_info = None  # prevent auto-mock from producing truthy usage values
         result.generations = [[gen]]
         cb.on_llm_end(result, run_id=llm_run_id)  # must not raise
         cb.on_chain_end({}, run_id=run_id)

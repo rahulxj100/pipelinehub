@@ -31,9 +31,18 @@ class PipelineHubCallbackHandler(BaseCallbackHandler):
     def on_llm_start(
         self, serialized: dict, prompts: list, *, run_id: Any, **kwargs: Any
     ) -> None:
+        # Extract actual model name — works for OpenAI, Anthropic, Google, etc.
+        invocation_params = kwargs.get("invocation_params") or {}
+        model = (
+            invocation_params.get("model")
+            or invocation_params.get("model_name")
+            or (serialized.get("kwargs") or {}).get("model")
+            or (serialized.get("kwargs") or {}).get("model_name")
+            or serialized.get("name", "unknown")
+        )
         self._run_map[str(run_id)] = {
             "type": "llm_call",
-            "model": serialized.get("name", "unknown"),
+            "model": model,
             "start": time.time(),
             "prompt_preview": truncate(prompts[0], 200) if prompts else "",
         }
@@ -41,18 +50,48 @@ class PipelineHubCallbackHandler(BaseCallbackHandler):
     def on_llm_end(self, response: Any, *, run_id: Any, **kwargs: Any) -> None:
         meta = self._run_map.pop(str(run_id), {})
         duration = time.time() - meta.get("start", time.time())
-        llm_output = getattr(response, "llm_output", None) or {}
-        usage = llm_output.get("token_usage", {}) if isinstance(llm_output, dict) else {}
         generations = getattr(response, "generations", None) or []
         output_text = ""
         if generations and generations[0]:
-            output_text = getattr(generations[0][0], "text", "") or ""
+            output_text = getattr(generations[0][0], "text", "") or str(
+                getattr(generations[0][0], "message", "")
+            )
+
+        # Normalize token usage across providers:
+        # OpenAI:    llm_output["token_usage"]   → prompt_tokens / completion_tokens
+        # Anthropic: llm_output["usage"]          → input_tokens / output_tokens
+        # Google:    generation_info["usage_metadata"] → prompt_token_count / candidates_token_count
+        llm_output = getattr(response, "llm_output", None) or {}
+        raw = {}
+        if isinstance(llm_output, dict):
+            raw = llm_output.get("token_usage") or llm_output.get("usage") or {}
+        if not raw and generations and generations[0]:
+            gen_info = getattr(generations[0][0], "generation_info", None) or {}
+            raw = (
+                gen_info.get("usage_metadata")
+                or gen_info.get("usage")
+                or gen_info.get("token_usage")
+                or {}
+            )
+        prompt_tokens = (
+            raw.get("prompt_tokens")
+            or raw.get("input_tokens")
+            or raw.get("prompt_token_count")
+            or 0
+        )
+        completion_tokens = (
+            raw.get("completion_tokens")
+            or raw.get("output_tokens")
+            or raw.get("candidates_token_count")
+            or 0
+        )
+
         self.pipeline.record_step(
             "llm_call",
             model=meta.get("model", "unknown"),
             duration=duration,
-            prompt_tokens=usage.get("prompt_tokens", 0),
-            completion_tokens=usage.get("completion_tokens", 0),
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
             output_preview=truncate(output_text, 200),
         )
 
