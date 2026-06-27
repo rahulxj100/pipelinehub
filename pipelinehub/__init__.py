@@ -15,7 +15,7 @@ from .utils import (
     outlier_removal,
 )
 
-__version__ = "0.1.21"
+__version__ = "0.1.22"
 __author__ = "Rahul Paul"
 __email__ = "paul.rahulxj100@gmail.com"
 
