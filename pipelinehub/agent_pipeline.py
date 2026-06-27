@@ -19,9 +19,11 @@ class AgentPipeline:
         self,
         name: str = "agent",
         db_path: str = ".pipelinehub/runs.db",
+        api_key: Optional[str] = None,
+        api_url: str = "https://api.pipelinehub.cloud",
     ) -> None:
         self.name = name
-        self._store = RunStore(db_path=db_path)
+        self._store = RunStore(db_path=db_path, api_key=api_key, api_url=api_url)
         self._current_run_id: Optional[str] = None
         self._current_run_steps: List[Dict[str, Any]] = []
         self._last_run_steps: List[Dict[str, Any]] = []

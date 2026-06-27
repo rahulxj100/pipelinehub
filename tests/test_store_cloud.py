@@ -49,65 +49,58 @@ class TestCloudPost:
     def test_no_call_when_no_api_key(self):
         store = RunStore(db_path=":memory:")
         with patch("urllib.request.urlopen") as mock_open:
-            store._cloud_post("/v1/runs", {"run_id": "abc"})
+            store._send_or_buffer("POST", "/v1/runs", {"run_id": "abc"})
             mock_open.assert_not_called()
 
     def test_posts_to_correct_url(self):
         store = RunStore(db_path=":memory:", api_key="ph_live_x", api_url="http://localhost:8000")
-        with patch("pipelinehub.store.threading.Thread", side_effect=make_sync_thread):
-            with patch("urllib.request.urlopen") as mock_open:
-                store._cloud_post("/v1/runs", {"run_id": "abc"})
-                req = mock_open.call_args[0][0]
-                assert req.full_url == "http://localhost:8000/v1/runs"
+        with patch("urllib.request.urlopen") as mock_open:
+            store._send_or_buffer("POST", "/v1/runs", {"run_id": "abc"}, sync=True)
+            req = mock_open.call_args[0][0]
+            assert req.full_url == "http://localhost:8000/v1/runs"
 
     def test_post_method_default(self):
         store = RunStore(db_path=":memory:", api_key="ph_live_x", api_url="http://localhost:8000")
-        with patch("pipelinehub.store.threading.Thread", side_effect=make_sync_thread):
-            with patch("urllib.request.urlopen") as mock_open:
-                store._cloud_post("/v1/runs", {"run_id": "abc"})
-                req = mock_open.call_args[0][0]
-                assert req.get_method() == "POST"
+        with patch("urllib.request.urlopen") as mock_open:
+            store._send_or_buffer("POST", "/v1/runs", {"run_id": "abc"}, sync=True)
+            req = mock_open.call_args[0][0]
+            assert req.get_method() == "POST"
 
     def test_patch_method(self):
         store = RunStore(db_path=":memory:", api_key="ph_live_x", api_url="http://localhost:8000")
-        with patch("pipelinehub.store.threading.Thread", side_effect=make_sync_thread):
-            with patch("urllib.request.urlopen") as mock_open:
-                store._cloud_post("/v1/runs/abc", {"status": "success"}, method="PATCH")
-                req = mock_open.call_args[0][0]
-                assert req.get_method() == "PATCH"
+        with patch("urllib.request.urlopen") as mock_open:
+            store._send_or_buffer("PATCH", "/v1/runs/abc", {"status": "success"}, sync=True)
+            req = mock_open.call_args[0][0]
+            assert req.get_method() == "PATCH"
 
     def test_auth_header_set(self):
         store = RunStore(db_path=":memory:", api_key="ph_live_secret", api_url="http://localhost:8000")
-        with patch("pipelinehub.store.threading.Thread", side_effect=make_sync_thread):
-            with patch("urllib.request.urlopen") as mock_open:
-                store._cloud_post("/v1/runs", {"run_id": "abc"})
-                req = mock_open.call_args[0][0]
-                assert req.get_header("Authorization") == "Bearer ph_live_secret"
+        with patch("urllib.request.urlopen") as mock_open:
+            store._send_or_buffer("POST", "/v1/runs", {"run_id": "abc"}, sync=True)
+            req = mock_open.call_args[0][0]
+            assert req.get_header("Authorization") == "Bearer ph_live_secret"
 
     def test_content_type_json(self):
         store = RunStore(db_path=":memory:", api_key="ph_live_x", api_url="http://localhost:8000")
-        with patch("pipelinehub.store.threading.Thread", side_effect=make_sync_thread):
-            with patch("urllib.request.urlopen") as mock_open:
-                store._cloud_post("/v1/runs", {"run_id": "abc"})
-                req = mock_open.call_args[0][0]
-                assert req.get_header("Content-type") == "application/json"
+        with patch("urllib.request.urlopen") as mock_open:
+            store._send_or_buffer("POST", "/v1/runs", {"run_id": "abc"}, sync=True)
+            req = mock_open.call_args[0][0]
+            assert req.get_header("Content-type") == "application/json"
 
     def test_payload_json_encoded(self):
         store = RunStore(db_path=":memory:", api_key="ph_live_x", api_url="http://localhost:8000")
         payload = {"run_id": "abc", "pipeline_name": "test"}
-        with patch("pipelinehub.store.threading.Thread", side_effect=make_sync_thread):
-            with patch("urllib.request.urlopen") as mock_open:
-                store._cloud_post("/v1/runs", payload)
-                req = mock_open.call_args[0][0]
-                body = json.loads(req.data)
-                assert body == payload
+        with patch("urllib.request.urlopen") as mock_open:
+            store._send_or_buffer("POST", "/v1/runs", payload, sync=True)
+            req = mock_open.call_args[0][0]
+            body = json.loads(req.data)
+            assert body == payload
 
     def test_urlopen_error_swallowed(self):
         store = RunStore(db_path=":memory:", api_key="ph_live_x", api_url="http://localhost:8000")
-        with patch("pipelinehub.store.threading.Thread", side_effect=make_sync_thread):
-            with patch("urllib.request.urlopen", side_effect=Exception("network down")):
-                # Must not raise
-                store._cloud_post("/v1/runs", {"run_id": "abc"})
+        with patch("urllib.request.urlopen", side_effect=Exception("network down")):
+            # Must not raise — failed send is buffered to pending_sync
+            store._send_or_buffer("POST", "/v1/runs", {"run_id": "abc"}, sync=True)
 
     def test_runs_in_non_daemon_thread(self):
         store = RunStore(db_path=":memory:", api_key="ph_live_x", api_url="http://localhost:8000")
@@ -121,7 +114,7 @@ class TestCloudPost:
 
         with patch("pipelinehub.store.threading.Thread", side_effect=capture_thread):
             with patch("urllib.request.urlopen"):
-                store._cloud_post("/v1/runs", {"run_id": "abc"})
+                store._send_or_buffer("POST", "/v1/runs", {"run_id": "abc"})
                 if created_threads:
                     created_threads[0].join(timeout=1.0)
                     assert created_threads[0].daemon is False
