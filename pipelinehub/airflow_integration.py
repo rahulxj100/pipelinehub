@@ -14,11 +14,18 @@ class PipelinehubCallback:
 
     Example::
 
-        from pipelinehub.airflow_integration import PipelinehubCallback
+        from pipelinehub.airflow_integration import (
+            PipelinehubCallback,
+        )
 
-        ph = PipelinehubCallback(pipeline_name="my_dag", api_key="sk-...")
+        ph = PipelinehubCallback(
+            pipeline_name="my_dag", api_key="sk-..."
+        )
 
-        @task(on_success_callback=ph.on_success, on_failure_callback=ph.on_failure)
+        @task(
+            on_success_callback=ph.on_success,
+            on_failure_callback=ph.on_failure,
+        )
         def extract():
             return df
     """
@@ -28,18 +35,22 @@ class PipelinehubCallback:
         pipeline_name: Optional[str] = None,
         db_path: str = ".pipelinehub/runs.db",
         api_key: Optional[str] = None,
-        api_url: str = "https://api.pipelinehub.cloud",
+        api_url: str = "https://api.pipelinehub.cloud",  # noqa: E501
     ) -> None:
         self._pipeline_name = pipeline_name
         self._profiler = DataProfiler()
-        self._store = RunStore(db_path=db_path, api_key=api_key, api_url=api_url)
+        self._store = RunStore(
+            db_path=db_path, api_key=api_key, api_url=api_url
+        )
 
     def on_success(self, context: Dict[str, Any]) -> None:
-        """Airflow on_success_callback. Profiles XCom output and records run."""
+        """Airflow callback to profile XCom and record success."""
         ti = context.get("task_instance") or context.get("ti")
         if ti is None:
             return
-        pipeline_name = self._pipeline_name or getattr(ti, "dag_id", "unknown")
+        pipeline_name = self._pipeline_name or getattr(
+            ti, "dag_id", "unknown"
+        )
         step_name = getattr(ti, "task_id", "unknown")
 
         xcom_value = None
@@ -61,16 +72,19 @@ class PipelinehubCallback:
             )
 
     def on_failure(self, context: Dict[str, Any]) -> None:
-        """Airflow on_failure_callback. Records failure and exception details."""
+        """Airflow callback to record failure and exception details."""
         ti = context.get("task_instance") or context.get("ti")
         if ti is None:
             return
-        pipeline_name = self._pipeline_name or getattr(ti, "dag_id", "unknown")
+        pipeline_name = self._pipeline_name or getattr(
+            ti, "dag_id", "unknown"
+        )
         step_name = getattr(ti, "task_id", "unknown")
 
         exc = context.get("exception")
         if not isinstance(exc, Exception):
-            exc = RuntimeError(str(exc) if exc is not None else "unknown error")
+            msg = str(exc) if exc is not None else "unknown error"
+            exc = RuntimeError(msg)
 
         with suppress(Exception):
             run_id = self._store.start_run(pipeline_name, 1)

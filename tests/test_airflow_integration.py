@@ -147,3 +147,43 @@ class TestOnFailure:
             ).fetchone()
         assert row[0] == "RuntimeError"
         assert "something went wrong" in row[1]
+
+
+class TestResilience:
+    def test_on_success_missing_task_instance_does_not_raise(self):
+        ph = PipelinehubCallback(pipeline_name="pipe", db_path=":memory:")
+        ph.on_success({})  # no task_instance key — must not raise
+
+    def test_on_success_ti_key_also_accepted(self):
+        ti = MockTI(xcom_value={"x": 1})
+        context = {"ti": ti}  # Airflow sometimes uses "ti" not "task_instance"
+        ph = PipelinehubCallback(pipeline_name="pipe", db_path=":memory:")
+        ph.on_success(context)
+        runs = ph._store.list_runs(pipeline_name="pipe")
+        assert len(runs) == 1
+
+    def test_on_failure_missing_task_instance_does_not_raise(self):
+        ph = PipelinehubCallback(pipeline_name="pipe", db_path=":memory:")
+        ph.on_failure({})
+
+    def test_on_failure_missing_exception_key_does_not_raise(self):
+        ti = MockTI()
+        ph = PipelinehubCallback(pipeline_name="pipe", db_path=":memory:")
+        ph.on_failure({"task_instance": ti})  # no exception key
+
+    def test_on_failure_none_exception_does_not_raise(self):
+        ti = MockTI()
+        ph = PipelinehubCallback(pipeline_name="pipe", db_path=":memory:")
+        ph.on_failure({"task_instance": ti, "exception": None})
+
+    def test_on_success_xcom_pull_raises_records_empty_snapshot(self):
+        class BrokenTI(MockTI):
+            def xcom_pull(self, task_ids=None):
+                raise RuntimeError("XCom backend unavailable")
+
+        ti = BrokenTI(xcom_value=None)
+        context = {"task_instance": ti}
+        ph = PipelinehubCallback(pipeline_name="pipe", db_path=":memory:")
+        ph.on_success(context)  # must not raise
+        run = ph._store.get_last_run("pipe")
+        assert run["steps"][0]["snapshot_after"] == {}
