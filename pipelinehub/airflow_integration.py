@@ -66,12 +66,15 @@ class PipelinehubCallback:
 
         duration = getattr(ti, "duration", None) or 0.0
 
+        run_id = None
         with suppress(Exception):
             run_id = self._store.start_run(pipeline_name, 1)
             self._store.save_step(run_id, step_name, 0, {}, snapshot, duration)
-            self._store.finish_run(
-                run_id, "success", datetime.datetime.utcnow().isoformat()
-            )
+        if run_id is not None:
+            with suppress(Exception):
+                self._store.finish_run(
+                    run_id, "success", datetime.datetime.utcnow().isoformat()
+                )
 
     def on_failure(self, context: Dict[str, Any]) -> None:
         """Airflow callback to record failure and exception details."""
@@ -88,9 +91,12 @@ class PipelinehubCallback:
             msg = str(exc) if exc is not None else "unknown error"
             exc = RuntimeError(msg)
 
+        run_id = None
         with suppress(Exception):
             run_id = self._store.start_run(pipeline_name, 1)
             self._store.save_failure(run_id, step_name, 0, {}, exc)
-            self._store.finish_run(
-                run_id, "failed", datetime.datetime.utcnow().isoformat()
-            )
+        if run_id is not None:
+            with suppress(Exception):
+                self._store.finish_run(
+                    run_id, "failed", datetime.datetime.utcnow().isoformat()
+                )
