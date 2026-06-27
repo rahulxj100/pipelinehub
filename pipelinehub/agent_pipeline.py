@@ -65,7 +65,7 @@ class AgentPipeline:
                 self._current_run_id,
                 step_name="{}_{}".format(step_type, self._step_index),
                 step_index=self._step_index,
-                snapshot_before={},
+                snapshot_before=snap,
                 exception=Exception(error),
             )
         self._error_count += 1
