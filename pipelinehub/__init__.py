@@ -4,6 +4,7 @@ PipelineHub - A library for creating custom data processing workflows.
 
 from .pipeline import DataPipeline
 from .errors import PipelineStepError
+from .agent_pipeline import AgentPipeline
 from .utils import (
     filter_numbers,
     square_numbers,
@@ -21,6 +22,7 @@ __email__ = "paul.rahulxj100@gmail.com"
 __all__ = [
     "DataPipeline",
     "PipelineStepError",
+    "AgentPipeline",
     "filter_numbers",
     "square_numbers", 
     "sum_data",

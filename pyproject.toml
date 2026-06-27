@@ -33,8 +33,9 @@ dependencies = []
 ph = "pipelinehub.cli:main"
 
 [project.optional-dependencies]
+langchain = ["langchain-core>=0.1.0"]
 airflow = ["apache-airflow>=2.0"]
-dev = ["pytest>=6.0", "black", "flake8", "mypy"]
+dev = ["pytest>=6.0", "black", "flake8", "mypy", "langchain-core>=0.1.0"]
 
 [project.urls]
 "Homepage" = "https://github.com/rahulxj100/pipelinehub"
