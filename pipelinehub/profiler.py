@@ -13,7 +13,8 @@ def _is_polars_numeric(dtype) -> bool:
 
 
 class DataProfiler:
-    """Captures lightweight statistical fingerprints of data at each pipeline step."""
+    """Captures lightweight statistical fingerprints of data at each
+    pipeline step."""
 
     def capture(self, data: Any, step_name: str, stage: str) -> Dict[str, Any]:
         """
@@ -99,8 +100,13 @@ class DataProfiler:
         dtypes = {col: str(df[col].dtype) for col in columns}
         null_counts = {col: int(df[col].isnull().sum()) for col in columns}
 
-        sample = df.sample(n=min(10000, rows), random_state=42) if rows > 10000 else df
-        numeric_cols = [c for c in columns if pd.api.types.is_numeric_dtype(df[c])]
+        if rows > 10000:
+            sample = df.sample(n=min(10000, rows), random_state=42)
+        else:
+            sample = df
+        numeric_cols = [
+            c for c in columns if pd.api.types.is_numeric_dtype(df[c])
+        ]
         numeric_stats: Dict[str, Any] = {}
         for col in numeric_cols:
             s = sample[col].dropna()
@@ -154,7 +160,8 @@ class DataProfiler:
         for col in numeric_cols:
             s = sample[col].drop_nulls()
             if len(s) > 0:
-                mean_v, std_v, min_v, max_v = s.mean(), s.std(), s.min(), s.max()
+                mean_v, std_v = s.mean(), s.std()
+                min_v, max_v = s.min(), s.max()
                 p25_v = s.quantile(0.25, interpolation="linear")
                 p50_v = s.quantile(0.50, interpolation="linear")
                 p75_v = s.quantile(0.75, interpolation="linear")
@@ -172,7 +179,6 @@ class DataProfiler:
 
         correlation = None
         if len(numeric_cols) >= 2:
-            import polars as pl
             correlation = {
                 c: {
                     r: float(df.select(pl.corr(c, r)).item())
@@ -207,7 +213,11 @@ class DataProfiler:
         null_count = int(np.sum(np.isnan(arr))) if is_float else 0
 
         p25, p50, p75 = (
-            (float(np.percentile(valid, 25)), float(np.percentile(valid, 50)), float(np.percentile(valid, 75)))
+            (
+                float(np.percentile(valid, 25)),
+                float(np.percentile(valid, 50)),
+                float(np.percentile(valid, 75))
+            )
             if len(valid) > 0 else (None, None, None)
         )
 
@@ -232,7 +242,11 @@ class DataProfiler:
             element_type = "empty"
         else:
             first_type = type(data[0]).__name__
-            element_type = first_type if all(type(x).__name__ == first_type for x in data) else "mixed"
+            element_type = (
+                first_type
+                if all(type(x).__name__ == first_type for x in data)
+                else "mixed"
+            )
 
         sample_head = list(data[:5])
         sample_tail = list(data[-5:])
@@ -247,7 +261,8 @@ class DataProfiler:
                 k = (length - 1) * pval
                 f = int(k)
                 c = min(f + 1, length - 1)
-                return sorted_data[f] + (k - f) * (sorted_data[c] - sorted_data[f])
+                delta = sorted_data[c] - sorted_data[f]
+                return sorted_data[f] + (k - f) * delta
 
             numeric_stats = {
                 "mean": mean,

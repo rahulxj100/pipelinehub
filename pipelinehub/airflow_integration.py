@@ -57,10 +57,12 @@ class PipelinehubCallback:
         with suppress(Exception):
             xcom_value = ti.xcom_pull(task_ids=step_name)
 
+        snapshot = {}
         if xcom_value is not None:
-            snapshot = self._profiler.capture(xcom_value, step_name, "after")
-        else:
-            snapshot = {}
+            with suppress(Exception):
+                snapshot = self._profiler.capture(
+                    xcom_value, step_name, "after"
+                )
 
         duration = getattr(ti, "duration", None) or 0.0
 
