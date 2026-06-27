@@ -35,7 +35,7 @@ class PipelinehubCallback:
         pipeline_name: Optional[str] = None,
         db_path: str = ".pipelinehub/runs.db",
         api_key: Optional[str] = None,
-        api_url: str = "https://api.pipelinehub.cloud",  # noqa: E501
+        api_url: str = "https://api.pipelinehub.cloud",
     ) -> None:
         self._pipeline_name = pipeline_name
         self._profiler = DataProfiler()
