@@ -236,11 +236,81 @@ pipeline.clear_steps()
 
 ---
 
+## LangChain / AI agent observability
+
+```bash
+pip install pipelinehub[langchain]
+```
+
+`AgentPipeline` + `PipelineHubCallbackHandler` instrument any LangChain chain or agent with zero code changes beyond adding the callback. Every LLM call, tool call, and chain step is recorded to local SQLite automatically.
+
+```python
+from pipelinehub import AgentPipeline
+from pipelinehub.langchain import PipelineHubCallbackHandler
+
+pipeline = AgentPipeline(name="research-agent")
+handler = PipelineHubCallbackHandler(pipeline)
+
+result = chain.invoke(
+    {"input": "Summarise AI trends"},
+    config={"callbacks": [handler]}
+)
+```
+
+After each run:
+
+```
+[PipelineHub] Run complete — 2,847 tokens used across 4 steps.
+              💰 Track cost trends over time → pipelinehub.cloud
+```
+
+**What gets tracked per run:**
+- Every LLM call — model name, prompt tokens, completion tokens, latency, output preview
+- Every tool call — tool name, input, output, latency
+- Every chain step — chain type, latency, output preview
+
+**Anomaly detection across runs** (automatic, no config):
+- `token_spike` — total tokens >2× last run
+- `latency_regression` — total duration >3× last run
+- `tool_call_drift` — different tools called vs last run
+- `tool_call_order_change` — same tools, different sequence
+- `error_rate_spike` — >20% of steps errored
+
+Works with OpenAI, Anthropic (Claude), and Google — token usage normalised automatically across all three providers.
+
+---
+
+## Airflow integration
+
+```bash
+pip install pipelinehub[airflow]
+```
+
+Attach `PipelinehubCallback` to any Airflow 2.x task. On success, it profiles the task's XCom output and records a snapshot. On failure, it records the exception.
+
+```python
+from pipelinehub.airflow_integration import PipelinehubCallback
+
+ph = PipelinehubCallback(pipeline_name="my_dag")
+
+@task(
+    on_success_callback=ph.on_success,
+    on_failure_callback=ph.on_failure,
+)
+def extract():
+    return df
+```
+
+`pipeline_name` is optional — falls back to the DAG id. Each task callback creates its own run record in `.pipelinehub/runs.db`, so you get per-task history and XCom snapshot diffing across DAG runs.
+
+---
+
 ## Roadmap
 
 **v0.1** ✅ — Fluent pipeline chaining, zero dependencies, verbose mode  
 **v0.2** ✅ — Automatic snapshot engine, rich failure context, run comparison, anomaly detection, replay, `ph` CLI  
-**v0.3** — Web dashboard for run history and team visibility  
+**v0.3** ✅ — LangChain agent observability, Airflow integration, cloud sync  
+**v0.4** — Web dashboard for run history and team visibility  
 
 ---
 
