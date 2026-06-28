@@ -1,6 +1,6 @@
 """PipelineHubCallbackHandler — LangChain callback integration."""
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 try:
     from langchain_core.callbacks import BaseCallbackHandler
@@ -51,22 +51,21 @@ class PipelineHubCallbackHandler(BaseCallbackHandler):
         meta = self._run_map.pop(str(run_id), {})
         duration = time.time() - meta.get("start", time.time())
         generations = getattr(response, "generations", None) or []
+        gen0 = generations[0][0] if (generations and generations[0]) else None
         output_text = ""
-        if generations and generations[0]:
-            output_text = getattr(generations[0][0], "text", "") or str(
-                getattr(generations[0][0], "message", "")
-            )
+        if gen0:
+            output_text = getattr(gen0, "text", "") or str(getattr(gen0, "message", ""))
 
         # Normalize token usage across providers:
-        # OpenAI:    llm_output["token_usage"]   → prompt_tokens / completion_tokens
-        # Anthropic: llm_output["usage"]          → input_tokens / output_tokens
+        # OpenAI:    llm_output["token_usage"]        → prompt_tokens / completion_tokens
+        # Anthropic: llm_output["usage"]               → input_tokens / output_tokens
         # Google:    generation_info["usage_metadata"] → prompt_token_count / candidates_token_count
         llm_output = getattr(response, "llm_output", None) or {}
-        raw = {}
+        raw: dict = {}
         if isinstance(llm_output, dict):
             raw = llm_output.get("token_usage") or llm_output.get("usage") or {}
-        if not raw and generations and generations[0]:
-            gen_info = getattr(generations[0][0], "generation_info", None) or {}
+        if not raw and gen0:
+            gen_info = getattr(gen0, "generation_info", None) or {}
             raw = (
                 gen_info.get("usage_metadata")
                 or gen_info.get("usage")
@@ -86,12 +85,25 @@ class PipelineHubCallbackHandler(BaseCallbackHandler):
             or 0
         )
 
+        # finish_reason: "stop"/"end_turn" = normal, "length"/"max_tokens" = silent truncation
+        finish_reason: Optional[str] = None
+        if gen0:
+            gen_info = getattr(gen0, "generation_info", None) or {}
+            msg = getattr(gen0, "message", None)
+            finish_reason = (
+                gen_info.get("finish_reason")
+                or gen_info.get("stop_reason")
+                or (getattr(msg, "response_metadata", None) or {}).get("stop_reason")
+                or (getattr(msg, "response_metadata", None) or {}).get("finish_reason")
+            )
+
         self.pipeline.record_step(
             "llm_call",
             model=meta.get("model", "unknown"),
             duration=duration,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
+            finish_reason=finish_reason,
             output_preview=truncate(output_text, 200),
         )
 
@@ -111,7 +123,7 @@ class PipelineHubCallbackHandler(BaseCallbackHandler):
     ) -> None:
         self._run_map[str(run_id)] = {
             "type": "tool_call",
-            "tool_name": serialized.get("name", "unknown"),
+            "tool_name": (serialized or {}).get("name", "unknown"),
             "start": time.time(),
             "input_preview": truncate(input_str, 200),
         }
@@ -133,6 +145,69 @@ class PipelineHubCallbackHandler(BaseCallbackHandler):
             error=str(error),
             tool_name=meta.get("tool_name", "unknown"),
             duration=time.time() - meta.get("start", time.time()),
+        )
+
+    # ------------------------------------------------------------ Retriever
+
+    def on_retriever_start(
+        self, serialized: dict, query: str, *, run_id: Any, **kwargs: Any
+    ) -> None:
+        self._run_map[str(run_id)] = {
+            "type": "retrieval",
+            "query_preview": truncate(query, 200),
+            "start": time.time(),
+        }
+
+    def on_retriever_end(self, documents: Any, *, run_id: Any, **kwargs: Any) -> None:
+        meta = self._run_map.pop(str(run_id), {})
+        docs: List[Any] = list(documents) if documents else []
+        scores = [
+            d.metadata.get("score") or d.metadata.get("relevance_score")
+            for d in docs
+            if hasattr(d, "metadata") and isinstance(d.metadata, dict)
+        ]
+        scores = [s for s in scores if s is not None]
+        sources = list({
+            d.metadata.get("source") or d.metadata.get("file_name") or ""
+            for d in docs[:10]
+            if hasattr(d, "metadata") and isinstance(d.metadata, dict)
+        } - {""})
+        self.pipeline.record_step(
+            "retrieval",
+            duration=time.time() - meta.get("start", time.time()),
+            query_preview=meta.get("query_preview", ""),
+            doc_count=len(docs),
+            avg_score=round(sum(scores) / len(scores), 4) if scores else None,
+            sources=sources[:5],
+        )
+
+    def on_retriever_error(self, error: Any, *, run_id: Any, **kwargs: Any) -> None:
+        meta = self._run_map.pop(str(run_id), {})
+        self.pipeline.record_step_error(
+            "retrieval",
+            error=str(error),
+            duration=time.time() - meta.get("start", time.time()),
+        )
+
+    # ------------------------------------------------------- Agent actions
+
+    def on_agent_action(self, action: Any, *, run_id: Any, **kwargs: Any) -> None:
+        # Record the agent's reasoning step (thought → tool selection)
+        self._run_map[f"agent_action_{run_id}"] = {
+            "tool": getattr(action, "tool", "unknown"),
+            "tool_input": truncate(str(getattr(action, "tool_input", "")), 200),
+            "thought": truncate(getattr(action, "log", "") or "", 300),
+            "start": time.time(),
+        }
+
+    def on_agent_finish(self, finish: Any, *, run_id: Any, **kwargs: Any) -> None:
+        return_values = getattr(finish, "return_values", {}) or {}
+        output = return_values.get("output") or str(return_values)
+        self.pipeline.record_step(
+            "agent_finish",
+            duration=0.0,
+            output_preview=truncate(output, 300),
+            log=truncate(getattr(finish, "log", "") or "", 200),
         )
 
     # ---------------------------------------------------------------- Chain

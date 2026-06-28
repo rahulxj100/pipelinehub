@@ -98,9 +98,8 @@ class AgentPipeline:
         def _last_snap(step: Dict[str, Any]) -> Dict[str, Any]:
             return step.get("snapshot_after") or {}
 
-        # token_spike, latency_regression, tool_call_drift, tool_call_order_change
-        # — only compare when there is prior history
         if last_steps:
+            # token_spike
             current_tokens = sum(
                 s.get("prompt_tokens", 0) + s.get("completion_tokens", 0)
                 for s in current_steps
@@ -113,8 +112,9 @@ class AgentPipeline:
             )
             if last_tokens > 0 and current_tokens > 2 * last_tokens:
                 anomalies.append(
-                    "⚠  token_spike: {} tokens vs"
-                    " {} last run (>2x)".format(current_tokens, last_tokens)
+                    "⚠  token_spike: {} tokens vs {} last run (>2x)".format(
+                        current_tokens, last_tokens
+                    )
                 )
 
             # latency_regression
@@ -122,8 +122,9 @@ class AgentPipeline:
             last_dur = sum(_last_snap(s).get("duration", 0.0) for s in last_steps)
             if last_dur > 0 and current_dur > 3 * last_dur:
                 anomalies.append(
-                    "⚠  latency_regression: {:.1f}s vs"
-                    " {:.1f}s last run (>3x)".format(current_dur, last_dur)
+                    "⚠  latency_regression: {:.1f}s vs {:.1f}s last run (>3x)".format(
+                        current_dur, last_dur
+                    )
                 )
 
             # tool_call_drift / tool_call_order_change
@@ -143,21 +144,53 @@ class AgentPipeline:
                     added = sorted(set(current_tools) - set(last_tools))
                     removed = sorted(set(last_tools) - set(current_tools))
                     anomalies.append(
-                        "⚠  tool_call_drift: added={}"
-                        " removed={} vs last run".format(added, removed)
+                        "⚠  tool_call_drift: added={} removed={} vs last run".format(
+                            added, removed
+                        )
                     )
                 elif current_tools != last_tools:
                     anomalies.append(
-                        "⚠  tool_call_order_change: same tools,"
-                        " different sequence vs last run"
+                        "⚠  tool_call_order_change: same tools, different sequence vs last run"
                     )
 
-        # error_rate_spike — always checked, no prior run needed
+            # doc_count_drop — retrieval returned significantly fewer docs than last run
+            current_docs = sum(
+                s.get("doc_count", 0)
+                for s in current_steps
+                if s.get("step_type") == "retrieval"
+            )
+            last_docs = sum(
+                _last_snap(s).get("doc_count", 0)
+                for s in last_steps
+                if _last_snap(s).get("step_type") == "retrieval"
+            )
+            if last_docs > 0 and current_docs < last_docs * 0.5:
+                anomalies.append(
+                    "⚠  doc_count_drop: {} docs retrieved vs {} last run (>50% drop)".format(
+                        current_docs, last_docs
+                    )
+                )
+
+            # truncated_output — any llm_call finished with length/max_tokens
+            truncated = [
+                s for s in current_steps
+                if s.get("step_type") == "llm_call"
+                and s.get("finish_reason") in ("length", "max_tokens")
+            ]
+            if truncated:
+                anomalies.append(
+                    "⚠  truncated_output: {} llm_call(s) hit max_tokens (output cut off)".format(
+                        len(truncated)
+                    )
+                )
+
+        # error_rate_spike — no prior run needed
         total = len(current_steps) + self._error_count
         if total > 0 and self._error_count / total > 0.20:
             anomalies.append(
-                "⚠  error_rate_spike: {}/{}"
-                " steps errored (>20%)".format(self._error_count, total)
+                "⚠  error_rate_spike: {}/{} steps errored (>20%)".format(
+                    self._error_count, total
+                )
             )
 
         return anomalies
@@ -170,18 +203,20 @@ class AgentPipeline:
             for s in steps
             if s.get("step_type") == "llm_call"
         )
+        total_docs = sum(
+            s.get("doc_count", 0)
+            for s in steps
+            if s.get("step_type") == "retrieval"
+        )
         n_steps = len(steps) + self._error_count
+        parts = ["{} steps".format(n_steps)]
         if total_tokens > 0:
-            print(
-                "[PipelineHub] Run complete — {:,} tokens used"
-                " across {} steps.".format(total_tokens, n_steps)
-            )
-            print(
-                "              \U0001f4b0 Track cost trends over time"
-                " → pipelinehub.cloud"
-            )
-        else:
-            print("[PipelineHub] Run complete — {} steps.".format(n_steps))
+            parts.append("{:,} tokens".format(total_tokens))
+        if total_docs > 0:
+            parts.append("{} docs retrieved".format(total_docs))
+        print("[PipelineHub] Run complete — {}.".format(", ".join(parts)))
+        if total_tokens > 0:
+            print("              \U0001f4b0 Track cost trends over time → pipelinehub.cloud")
         for a in anomalies:
             print(a)
 

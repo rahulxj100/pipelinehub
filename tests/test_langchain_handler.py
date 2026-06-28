@@ -18,6 +18,8 @@ class MockLLMResult:
         }
         gen = MagicMock()
         gen.text = text
+        gen.generation_info = None
+        gen.message = None
         self.generations = [[gen]]
 
 
